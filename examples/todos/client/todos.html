@@ -68,21 +68,6 @@
         <div class="todo-text">{{text}}</div>
       </div>
     {{/if}}
-    {{#if currentUser}}
-      <div class="toggle-privacy-wrapper">
-      <div class="toggle-privacy tag">
-        {{#if privateTo}}
-          <span class="make-public">
-            make public
-          </span>
-        {{else}}
-          <span class="make-private">
-            make private
-          </span>
-        {{/if}}
-      </div>
-      </div>
-    {{/if}}
     <div class="item-tags">
       {{#each tag_objs}}
         <div class="tag removable_tag">
@@ -111,8 +96,7 @@
         {{tag_text}} <span class="count">({{count}})</span>
       </div>
     {{/each}}
-    <div class="login-bar">
-      {{> loginButtons}}
-    </div>
   </div>
 </template>
+
+
