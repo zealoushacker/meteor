@@ -284,6 +284,12 @@ LocalCollection.prototype.insert = function (doc) {
 };
 
 LocalCollection.prototype.remove = function (selector) {
+  // default syntax for everything is to omit the selector argument.
+  // but if selector is explicitly passed in as false or undefined, we
+  // want a selector that matches nothing.
+  if (arguments.length === 0)
+    selector = {};
+
   var self = this;
   var remove = [];
   var query_remove = [];

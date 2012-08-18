@@ -942,7 +942,7 @@ Tinytest.add("liveui - listChunk table", function(test) {
   shouldFlushTo(tableOf('world', 'hello'));
 
   // remove all
-  c.remove({});
+  c.remove();
   shouldFlushTo(tableOf('(nothing)'));
 
   c.insert({value: "1", order: "A"});
@@ -1554,7 +1554,7 @@ Tinytest.add("liveui - cleanup", function(test) {
   var add_doc = function() {
     stuff.insert({foo:'bar'}); };
   var clear_docs = function() {
-    stuff.remove({}); };
+    stuff.remove(); };
   var remove_one = function() {
     stuff.remove(stuff.findOne()._id); };
 

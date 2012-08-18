@@ -62,12 +62,15 @@ var log_callbacks = function (operations) {
 
 Tinytest.add("minimongo - basics", function (test) {
   var c = new LocalCollection();
+  var insertFiveThings = function () {
+    c.insert({type: "kitten", name: "fluffy"});
+    c.insert({type: "kitten", name: "snookums"});
+    c.insert({type: "cryptographer", name: "alice"});
+    c.insert({type: "cryptographer", name: "bob"});
+    c.insert({type: "cryptographer", name: "cara"});
+  };
 
-  c.insert({type: "kitten", name: "fluffy"});
-  c.insert({type: "kitten", name: "snookums"});
-  c.insert({type: "cryptographer", name: "alice"});
-  c.insert({type: "cryptographer", name: "bob"});
-  c.insert({type: "cryptographer", name: "cara"});
+  insertFiveThings();
   test.equal(c.find().count(), 5);
   test.equal(c.find({type: "kitten"}).count(), 2);
   test.equal(c.find({type: "cryptographer"}).count(), 3);
@@ -96,10 +99,14 @@ Tinytest.add("minimongo - basics", function (test) {
   c.remove({_id: null});
   c.remove({_id: false});
   c.remove({_id: undefined});
-  c.remove();
   test.equal(c.find().count(), 4);
 
   c.remove({});
+  test.equal(c.find().count(), 0);
+
+  insertFiveThings();
+  test.equal(c.find().count(), 5);
+  c.remove();
   test.equal(c.find().count(), 0);
 
   c.insert({_id: 1, name: "strawberry", tags: ["fruit", "red", "squishy"]});

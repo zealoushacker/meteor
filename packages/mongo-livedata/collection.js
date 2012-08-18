@@ -77,7 +77,7 @@ Meteor.Collection = function (name, manager, driver) {
 
       // Reset the collection to its original, empty state.
       reset: function () {
-        self._collection.remove({});
+        self._collection.remove();
       }
     });
 

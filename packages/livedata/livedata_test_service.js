@@ -28,7 +28,7 @@ Ledger = new Meteor.Collection("ledger");
 
 Meteor.startup(function () {
   if (Meteor.is_server)
-    Ledger.remove({}); // XXX can this please be Ledger.remove()?
+    Ledger.remove();
 });
 
 if (Meteor.is_server)
