@@ -3,7 +3,7 @@
 set -e
 set -u
 
-BUNDLE_VERSION=0.2.5
+BUNDLE_VERSION=0.2.6
 UNAME=$(uname)
 ARCH=$(uname -m)
 
@@ -53,9 +53,9 @@ umask 022
 mkdir build
 cd build
 
-git clone git://github.com/joyent/node.git
+git clone git://github.com/glasser/node.git
 cd node
-git checkout v0.8.11
+git checkout v0.8.11-afterConnect
 
 ./configure --prefix="$DIR"
 make -j4
