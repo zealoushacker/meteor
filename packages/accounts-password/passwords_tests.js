@@ -95,6 +95,7 @@ if (Meteor.isClient) (function () {
       Meteor.loginWithPassword(username, password, expect(function (error) {
         test.equal(error, undefined);
         test.notEqual(Meteor.userId(), null);
+        // XXX review this bit pre push
         // Since userId has changed, the first autorun has been invalidated, so
         // flush will re-run it and user will become not null.  In the *CURRENT
         // IMPLEMENTATION*, we will have just called _makeClientLoggedIn which

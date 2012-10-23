@@ -243,14 +243,7 @@
   ///
 
   // Publish the current user's record to the client.
-  // XXX This should just be a universal subscription, but we want to know when
-  //     we've gotten the data after a 'login' method, which currently requires
-  //     us to unsub, sub, and wait for onComplete. This is wasteful because
-  //     we're actually guaranteed to have the data by the time that 'login'
-  //     returns. But we don't expose a callback to Meteor.apply which lets us
-  //     know when the data has been processed (ie, quiescence, or at least
-  //     partial quiescence).
-  Meteor.publish("meteor.currentUser", function() {
+  Meteor.publish(null, function() {
     if (this.userId)
       return Meteor.users.find(
         {_id: this.userId},
