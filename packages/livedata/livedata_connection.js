@@ -58,8 +58,8 @@ Meteor._LivedataConnection = function (url, options) {
   // if set, called when we reconnect, queuing method calls _before_
   // the existing outstanding ones
   self.onReconnect = null;
-  // waiting for data from method
-  self.unsatisfied_methods = {}; // map from method_id -> true
+  // waiting for data from method. map from method_id -> object with onDataReady
+  self._unsatisfiedMethods = {};
   // sub was ready, is no longer (due to reconnect)
   self.unready_subscriptions = {}; // map from sub._id -> true
   // messages from the server that have not been applied
@@ -68,6 +68,8 @@ Meteor._LivedataConnection = function (url, options) {
   self.queued = {};
   // if we're blocking a migration, the retry func
   self._retryMigrate = null;
+  // onDataReady callbacks we need to call on quiesce
+  self._onDataReadyCallbacks = [];
 
   // metadata for subscriptions
   self.subs = new LocalCollection;
@@ -287,6 +289,7 @@ _.extend(Meteor._LivedataConnection.prototype, {
   //   wait: Boolean - Should we block subsequent method calls on this
   //                   method's result having been received?
   //                   (does not affect methods called from within this method)
+  //   onDataReady: Function - XXX
   // @param callback {Optional Function}
   apply: function (name, args, options, callback) {
     var self = this;
@@ -372,6 +375,9 @@ _.extend(Meteor._LivedataConnection.prototype, {
     // return the value of the RPC to the caller.
 
     // If the caller didn't give a callback, decide what to do.
+    //
+    // XXX On the server, should a call with onDataReady but no result callback
+    // be async or sync?
     if (!callback) {
       if (Meteor.isClient)
         // On the client, we don't have fibers, so we can't block. The
@@ -401,13 +407,13 @@ _.extend(Meteor._LivedataConnection.prototype, {
     if (self.outstanding_wait_method) {
       self.blocked_methods.push({
         msg: msg,
-        callback: callback,
+        resultCallback: callback,
         wait: options.wait
       });
     } else {
       var method_object = {
         msg: msg,
-        callback: callback
+        resultCallback: callback
       };
 
       if (options.wait)
@@ -421,7 +427,7 @@ _.extend(Meteor._LivedataConnection.prototype, {
     // Even if we are waiting on other method calls mark this method
     // as unsatisfied so that the user never ends up seeing
     // intermediate versions of the server's datastream
-    self.unsatisfied_methods[msg.id] = true;
+    self._unsatisfiedMethods[msg.id] = {onDataReady: options.onDataReady};
 
     // If we're using the default callback on the server,
     // synchronously return the result from the remote host.
@@ -471,6 +477,7 @@ _.extend(Meteor._LivedataConnection.prototype, {
   // you may do inside your callback -- in particular, don't do
   // anything that could result in another call to onQuiesce, or
   // results are undefined.
+  // XXX replace all uses of this with onDataReady
   onQuiesce: function (f) {
     var self = this;
 
@@ -478,7 +485,7 @@ _.extend(Meteor._LivedataConnection.prototype, {
       Meteor._debug("Exception in quiesce callback", e.stack);
     });
 
-    for (var method_id in self.unsatisfied_methods) {
+    for (var method_id in self._unsatisfiedMethods) {
       // we are not quiesced -- wait until we are
       self.quiesce_callbacks.push(f);
       return;
@@ -528,15 +535,19 @@ _.extend(Meteor._LivedataConnection.prototype, {
     // NOTE: does not fire callbacks here, that happens when
     // the data message is processed for real. This is just for
     // quiescing.
-    _.each(msg.methods || [], function (method_id) {
-      delete self.unsatisfied_methods[method_id];
+    _.each(msg.methods || [], function (methodId) {
+      var onDataReady = Meteor._get(
+        self._unsatisfiedMethods, methodId, 'onDataReady');
+      if (onDataReady)
+        self._onDataReadyCallbacks.push(onDataReady);
+      delete self._unsatisfiedMethods[methodId];
     });
     _.each(msg.subs || [], function (sub_id) {
       delete self.unready_subscriptions[sub_id];
     });
 
     // If there are still method invocations in flight, stop
-    for (var method_id in self.unsatisfied_methods)
+    for (var method_id in self._unsatisfiedMethods)
       return;
     // If there are still uncomplete subscriptions, stop
     for (var sub_id in self.unready_subscriptions)
@@ -599,6 +610,12 @@ _.extend(Meteor._LivedataConnection.prototype, {
     });
 
     _.each(self.stores, function (s) { s.endUpdate(); });
+
+    // XXX Make it possible to resolve methods even when not all methods are
+    // finished, by taking more snapshots. This will make onDataReady more
+    // powerful than the test-only onQuiesce callback.
+    _.each(self._onDataReadyCallbacks, function (cb) { cb(); });
+    self._onDataReadyCallbacks = [];
 
     _.each(self.quiesce_callbacks, function (cb) { cb(); });
     self.quiesce_callbacks = [];
@@ -708,13 +725,13 @@ _.extend(Meteor._LivedataConnection.prototype, {
     // callback will have already been bindEnvironment'd by apply(),
     // so no need to catch exceptions
     if ('error' in response) {
-      method.callback(new Meteor.Error(
+      method.resultCallback(new Meteor.Error(
         response.error.error, response.error.reason,
         response.error.details));
     } else {
       // msg.result may be undefined if the method didn't return a
       // value
-      method.callback(undefined, response.result);
+      method.resultCallback(undefined, response.result);
     }
   },
 

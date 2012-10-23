@@ -131,18 +131,17 @@
       test.isTrue(Meteor.user().emails[0].verified);
     },
     function (test, expect) {
-      Meteor.call(
-        "addEmailForTestAndVerify", email3,
+      Meteor.apply(
+        "addEmailForTestAndVerify", [email3],
+        { onDataReady:
+          expect(function () {
+            test.equal(Meteor.user().emails.length, 2);
+            test.equal(Meteor.user().emails[1].address, email3);
+            test.isFalse(Meteor.user().emails[1].verified);
+          })},
         expect(function (error, result) {
           test.isFalse(error);
         }));
-    },
-    function (test, expect) {
-      Meteor.default_connection.onQuiesce(expect(function () {
-        test.equal(Meteor.user().emails.length, 2);
-        test.equal(Meteor.user().emails[1].address, email3);
-        test.isFalse(Meteor.user().emails[1].verified);
-      }));
     },
     function (test, expect) {
       getVerifyEmailToken(email3, test, expect);

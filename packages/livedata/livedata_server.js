@@ -877,6 +877,8 @@ _.extend(Meteor._LivedataServer.prototype, {
                       name + "'", e.stack);
       });
 
+    // XXX Is there a use case for implementing onDataReady on the server?
+
     // Run the handler
     var handler = self.method_handlers[name];
     if (!handler)
