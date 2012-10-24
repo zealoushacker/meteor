@@ -27,6 +27,33 @@
     return {_id: userId};
   };
 
+  // XXX maybe move methodOptionsArgument into options?
+  Accounts.callLoginMethod = function (methodOptionsArgument, options) {
+    options = _.extend({
+      methodName: 'login',
+      acceptResult: function () { },
+      userCallback: function () { }
+    }, options);
+    // XXX can we guarantee that onDataReady happens after result?
+    Meteor.apply(options.methodName, [methodOptionsArgument],
+                 {wait: true}, function (error, result) {
+                   if (error || !result) {
+                     error = error || new Error("No result from call to " + options.methodName);
+                     options.userCallback(error);
+                     return;
+                   }
+                   try {
+                     options.acceptResult(result);
+                   } catch (e) {
+                     options.userCallback(e);
+                     return;
+                   }
+                   // XXX factor out the setUserId call into onDataReady
+                   Accounts._makeClientLoggedIn(result.id, result.token);
+                   options.userCallback();
+                 });
+  };
+
   Accounts._makeClientLoggedOut = function() {
     Accounts._unstoreLoginToken();
     Meteor.default_connection.setUserId(null);

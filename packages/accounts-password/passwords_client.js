@@ -49,23 +49,12 @@
       }
 
       var response = srp.respondToChallenge(result);
-      Meteor.apply('login', [
-        {srp: response}
-      ], {wait: true}, function (error, result) {
-        if (error || !result) {
-          error = error || new Error("No result from call to login");
-          callback && callback(error);
-          return;
-        }
-
-        if (!srp.verifyConfirmation({HAMK: result.HAMK})) {
-          callback && callback(new Error("Server is cheating!"));
-          return;
-        }
-
-        Accounts._makeClientLoggedIn(result.id, result.token);
-        callback && callback();
-      });
+      Accounts.callLoginMethod({srp: response}, {
+        acceptResult: function (result) {
+          if (!srp.verifyConfirmation({HAMK: result.HAMK}))
+            throw new Error("Server is cheating!");
+        },
+        userCallback: callback});
     });
   };
 
