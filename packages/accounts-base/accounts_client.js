@@ -27,15 +27,19 @@
     return {_id: userId};
   };
 
-  // XXX maybe move methodOptionsArgument into options?
-  Accounts.callLoginMethod = function (methodOptionsArgument, options) {
+  // XXX doc. make it clear what a login method is (ie, it should on success
+  //     setUserId and return {token,id})
+  Accounts.callLoginMethod = function (options) {
     options = _.extend({
       methodName: 'login',
+      methodArguments: [],
       acceptResult: function () { },
+      // XXX not sure about the name here. 'callback'? or just take it
+      //     out of the options object?
       userCallback: function () { }
     }, options);
     // XXX can we guarantee that onDataReady happens after result?
-    Meteor.apply(options.methodName, [methodOptionsArgument],
+    Meteor.apply(options.methodName, options.methodArguments,
                  {wait: true}, function (error, result) {
                    if (error || !result) {
                      error = error || new Error("No result from call to " + options.methodName);

@@ -11,18 +11,8 @@
 
     Accounts.callLoginMethod(options, {
       methodName: 'createUser',
+      methodArguments: [options],
       userCallback: callback
-
-    Meteor.apply('createUser', [options], {wait: true},
-                 function (error, result) {
-                   if (error || !result) {
-                     error = error || new Error("No result");
-                     callback && callback(error);
-                     return;
-                   }
-
-      Accounts._makeClientLoggedIn(result.id, result.token);
-      callback && callback();
     });
   };
 
@@ -53,7 +43,8 @@
       }
 
       var response = srp.respondToChallenge(result);
-      Accounts.callLoginMethod({srp: response}, {
+      Accounts.callLoginMethod({
+        methodArguments: [{srp: response}],
         acceptResult: function (result) {
           if (!srp.verifyConfirmation({HAMK: result.HAMK}))
             throw new Error("Server is cheating!");
@@ -138,18 +129,10 @@
       throw new Error("Need to pass newPassword");
 
     var verifier = Meteor._srp.generateVerifier(newPassword);
-    Meteor.apply(
-      "resetPassword", [token, verifier], {wait: true},
-      function (error, result) {
-        if (error || !result) {
-          error = error || new Error("No result from call to resetPassword");
-          callback && callback(error);
-          return;
-        }
-
-        Accounts._makeClientLoggedIn(result.id, result.token);
-        callback && callback();
-      });
+    Accounts.callLoginMethod({
+      methodName: 'resetPassword',
+      methodArguments: [token, verifier],
+      userCallback: callback});
   };
 
   // Verifies a user's email address based on a token originally
@@ -161,18 +144,10 @@
     if (!token)
       throw new Error("Need to pass token");
 
-    Meteor.call(
-      "verifyEmail", token,
-      function (error, result) {
-        if (error || !result) {
-          error = error || new Error("No result from call to verifyEmail");
-          callback && callback(error);
-          return;
-        }
-
-        Accounts._makeClientLoggedIn(result.id, result.token);
-        callback && callback();
-      });
+    Accounts.callLoginMethod({
+      methodName: 'verifyEmail',
+      methodArguments: [token],
+      userCallback: callback});
   };
 })();
 

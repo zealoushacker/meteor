@@ -32,8 +32,9 @@
   // access in the popup this should log the user in, otherwise
   // nothing should happen.
   var tryLoginAfterPopupClosed = function(state, callback) {
-    Meteor.apply('login', [
-      {oauth: {state: state}}
+    Accounts.callLoginMethod({
+      methodArguments: [{oauth: {state: state}}],
+      userCallback
     ], {wait: true}, function(error, result) {
       if (error) {
         // got an error from the server. report it back.
