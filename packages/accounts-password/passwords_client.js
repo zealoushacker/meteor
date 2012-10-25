@@ -9,6 +9,10 @@
     delete options.password;
     options.srp = verifier;
 
+    Accounts.callLoginMethod(options, {
+      methodName: 'createUser',
+      userCallback: callback
+
     Meteor.apply('createUser', [options], {wait: true},
                  function (error, result) {
                    if (error || !result) {
