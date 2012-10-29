@@ -19,18 +19,19 @@ Meteor._runTestsEverywhere = function (onReport, onComplete) {
     maybeDone();
   });
 
-  Meteor.call('tinytest/run', runId, function (error, result) {
-    if (error)
-      // XXX better report error
-      throw new Error("Test server returned an error");
-  });
-
-  Meteor.default_connection.onQuiesce(function () {
+  var onDataReady = function () {
     // and of course we shouldn't print "All tests pass!"
     // until we have actually received the test results :)
     remoteComplete = true;
     maybeDone();
-  });
+  };
+
+  Meteor.apply('tinytest/run', [runId], {onDataReady: onDataReady},
+               function (error, result) {
+                 if (error)
+                   // XXX better report error
+                   throw new Error("Test server returned an error");
+               });
 
   Meteor.subscribe(Meteor._ServerTestResultsSubscription, runId);
   Meteor.default_connection.registerStore(Meteor._ServerTestResultsCollection, {

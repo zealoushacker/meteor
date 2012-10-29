@@ -47,7 +47,7 @@ Meteor.loginWithToken = function (token, callback) {
 };
 
 // XXX should this be in a Meteor.startup block so that we don't have to worry
-// about load order issues?
+// about load order issues? Or would that create more flicker?
 if (!Accounts._preventAutoLogin) {
   // Immediately try to log in via local storage, so that any DDP
   // messages are sent after we have established our user account
