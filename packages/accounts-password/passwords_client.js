@@ -9,7 +9,7 @@
     delete options.password;
     options.srp = verifier;
 
-    Accounts.callLoginMethod(options, {
+    Accounts.callLoginMethod({
       methodName: 'createUser',
       methodArguments: [options],
       userCallback: callback

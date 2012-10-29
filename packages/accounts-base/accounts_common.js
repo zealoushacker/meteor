@@ -62,6 +62,9 @@ Accounts.ConfigError.prototype.name = 'Accounts.ConfigError';
 // popup, declines retina scan, etc)
 Accounts.LoginCancelledError = function(description) {
   this.message = description;
+  // XXX Is the purpose of this line that catchers should be checking
+  // `e.cancelled` instead of `e instanceof Accounts.LoginCancelledError`?
+  // Because they aren't.
   this.cancelled = true;
 };
 Accounts.LoginCancelledError.prototype = new Error();

@@ -127,30 +127,26 @@ if (Meteor.isClient) (function () {
                                loggedInAs(username, test, expect));
     },
     logoutStep,
-    // plain text password. no API for this, have to send a raw message.
+    // plain text password. no API for this, have to invoke callLoginMethod
+    // directly.
     function (test, expect) {
-      Meteor.call(
+      Accounts.callLoginMethod({
         // wrong password
-        'login', {user: {email: email}, password: password2},
-        expect(function (error, result) {
+        methodArguments: [{user: {email: email}, password: password2}],
+        userCallback: expect(function (error) {
           test.isTrue(error);
-          test.isFalse(result);
           test.isFalse(Meteor.user());
-      }));
+        })});
     },
     function (test, expect) {
       var quiesceCallback = verifyUsername(username, test, expect);
-      Meteor.call(
+      Accounts.callLoginMethod({
         // right password
-        'login', {user: {email: email}, password: password},
-        expect(function (error, result) {
+        methodArguments: [{user: {email: email}, password: password}],
+        userCallback: expect(function (error) {
           test.equal(error, undefined);
-          test.isTrue(result.id);
-          test.isTrue(result.token);
-          // emulate the real login behavior, so as not to confuse test.
-          Accounts._makeClientLoggedIn(result.id, result.token);
           Meteor.default_connection.onQuiesce(quiesceCallback);
-      }));
+        })});
     },
     // change password with bad old password. we stay logged in.
     function (test, expect) {
@@ -179,18 +175,17 @@ if (Meteor.isClient) (function () {
                                loggedInAs(username, test, expect));
     },
     logoutStep,
-    // create user with raw password
+    // create user with raw password (no API, need to invoke callLoginMethod
+    // directly)
     function (test, expect) {
       var quiesceCallback = verifyUsername(username2, test, expect);
-      Meteor.call('createUser', {username: username2, password: password2},
-                  expect(function (error, result) {
-                    test.equal(error, undefined);
-                    test.isTrue(result.id);
-                    test.isTrue(result.token);
-                    // emulate the real login behavior, so as not to confuse test.
-                    Accounts._makeClientLoggedIn(result.id, result.token);
-                    Meteor.default_connection.onQuiesce(quiesceCallback);
-                  }));
+      Accounts.callLoginMethod({
+        methodName: 'createUser',
+        methodArguments: [{username: username2, password: password2}],
+        userCallback: expect(function (error) {
+          test.equal(error, undefined);
+          Meteor.default_connection.onQuiesce(quiesceCallback);
+        })});
     },
     logoutStep,
     function(test, expect) {
