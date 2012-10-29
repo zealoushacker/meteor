@@ -1,29 +1,27 @@
 (function () {
 
+  // This is reactive.
   Meteor.userId = function () {
     return Meteor.default_connection.userId();
   };
 
-  var userLoadedListeners = new Meteor.deps._ContextSet;
-  var currentUserSubscriptionData;
+  // XXX expose "is logging in" state instead of "is loaded" state
 
+  // XXX get rid of this?
   Meteor.userLoaded = function () {
-    userLoadedListeners.addCurrentContext();
-    return currentUserSubscriptionData && currentUserSubscriptionData.loaded;
+    return !!Meteor.userId();
   };
 
-  // This calls userId and userLoaded, both of which are reactive.
+  // This calls userId, which is reactive.
   Meteor.user = function () {
     var userId = Meteor.userId();
     if (!userId)
       return null;
-    if (Meteor.userLoaded()) {
-      var user = Meteor.users.findOne(userId);
-      if (user) return user;
-    }
-    // Either the subscription isn't done yet, or for some reason this user has
-    // no published fields (and thus is considered to not exist in
-    // minimongo). Return a minimal object.
+    var user = Meteor.users.findOne(userId);
+    if (user) return user;
+
+    // For some reason this user has no published fields (and thus is considered
+    // to not exist in minimongo). Return a minimal object.
     return {_id: userId};
   };
 
@@ -38,9 +36,27 @@
       //     out of the options object?
       userCallback: function () { }
     }, options);
-    // XXX can we guarantee that onDataReady happens after result?
+    // XXX can we have a more general pattern for "call this function once we
+    //     have both result and data"? we are NOT going to guarantee that data
+    //     always comes after result.
+    var gotData = false;
+    var gotResult = false;
+    var savedResult;
+    var maybeMakeClientLoggedIn = function () {
+      if (gotData && gotResult) {
+        // We have both the data and the result. Make the client logged in ---
+        // and the user is already loaded!
+        Accounts._makeClientLoggedIn(savedResult.id, savedResult.token);
+        options.userCallback();
+      }
+    };
     Meteor.apply(
-      options.methodName, options.methodArguments, {wait: true},
+      options.methodName, options.methodArguments, {
+        wait: true,
+        onDataReady: function () {
+          gotData = true;
+          maybeMakeClientLoggedIn();
+        }},
       function (error, result) {
         if (error || !result) {
           error = error || new Error(
@@ -54,9 +70,9 @@
           options.userCallback(e);
           return;
         }
-        // XXX factor out the setUserId call into onDataReady
-        Accounts._makeClientLoggedIn(result.id, result.token);
-        options.userCallback();
+        gotResult = true;
+        savedResult = result;
+        maybeMakeClientLoggedIn();
       });
   };
 
@@ -64,11 +80,6 @@
     Accounts._unstoreLoginToken();
     Meteor.default_connection.setUserId(null);
     Meteor.default_connection.onReconnect = null;
-    userLoadedListeners.invalidateAll();
-    if (currentUserSubscriptionData) {
-      currentUserSubscriptionData.handle.stop();
-      currentUserSubscriptionData = null;
-    }
   };
 
   Accounts._makeClientLoggedIn = function(userId, token) {
@@ -84,20 +95,6 @@
         }
       });
     };
-    userLoadedListeners.invalidateAll();
-    if (currentUserSubscriptionData) {
-      currentUserSubscriptionData.handle.stop();
-    }
-    var data = currentUserSubscriptionData = {loaded: false};
-    data.handle = Meteor.subscribe(
-      "meteor.currentUser", function () {
-        // Important! We use "data" here, not "currentUserSubscriptionData", so
-        // that if we log out and in again before this subscription is ready, we
-        // don't make currentUserSubscriptionData look ready just because this
-        // older iteration of subscribing is ready.
-        data.loaded = true;
-        userLoadedListeners.invalidateAll();
-      });
   };
 
   Meteor.logout = function (callback) {

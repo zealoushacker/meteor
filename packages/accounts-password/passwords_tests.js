@@ -107,7 +107,7 @@ if (Meteor.isClient) (function () {
         // the test.isFalse failing.)
         Meteor.flush();
         test.notEqual(user, null);
-        test.isFalse(user.emails);
+        test.isTrue(user.emails);
         waitForLoaded();
       }));
     },
