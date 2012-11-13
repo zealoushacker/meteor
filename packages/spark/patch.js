@@ -374,6 +374,8 @@ Spark._Patcher._copyAttributes = function(tgt, src) {
     // uncheck it, eg in FF12, so we uncheck explicitly
     // (if necessary; we don't want to generate spurious
     // propertychange events in old IE).
+    // XXX Should we just do the same thing for false-to-true,
+    //     instead of dealing with it later?
     if (tgt.checked === true && src.checked === false) {
       tgt.checked = false;
     }
@@ -463,8 +465,11 @@ Spark._Patcher._copyAttributes = function(tgt, src) {
         if (name === "type") {
         // can't change type of INPUT in IE; don't support it
         } else if (name === "checked") {
-          tgt.checked = tgt.defaultChecked = (value && value !== "false");
-          tgt.setAttribute("checked", "checked");
+          tgt.checked = tgt.defaultChecked = value !== "false";
+          if (tgt.checked)
+            tgt.setAttribute("checked", "checked");
+          else
+            tgt.removeAttribute("checked");
         } else if (name === "style") {
           tgt.style.cssText = src.style.cssText;
         } else if (name === "class") {
