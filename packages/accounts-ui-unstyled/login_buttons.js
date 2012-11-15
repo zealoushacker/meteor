@@ -88,6 +88,15 @@
 
 
   //
+  // loginButtonsLoggingInPadding template
+  //
+
+  Template._loginButtonsLoggingInPadding.dropdown = function () {
+    return Accounts._loginButtons.dropdown();
+  };
+
+
+  //
   // helpers
   //
 

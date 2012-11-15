@@ -114,7 +114,7 @@ if (Meteor.isClient) {
     return settings.alignRight ? 'right' : 'left';
   };
 
-  var fakeLogin = function () {
+  var fakeLogin = function (callback) {
     Accounts.createUser(
       {username: Meteor.uuid(),
        password: "password",
@@ -130,6 +130,7 @@ if (Meteor.isClient) {
         if (! Session.get('settings').hasPasswords)
           Meteor.users.update(Meteor.userId(),
                               { $unset: { username: 1 }});
+        callback();
       });
   };
 
@@ -178,8 +179,9 @@ if (Meteor.isClient) {
       } else if (this.key === "sign") {
         if (this.value === 'in') {
           // create a random new user
-          Accounts._loginButtonsSession.closeDropdown();
-          fakeLogin();
+          fakeLogin(function () {
+            Accounts._loginButtonsSession.closeDropdown();
+          });
         } else if (this.value === 'out') {
           Meteor.logout();
         }
