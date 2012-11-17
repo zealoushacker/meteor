@@ -170,9 +170,9 @@ if (Meteor.isClient) {
         Accounts.loginServiceConfiguration.remove({service: service});
       } else if (this.key === "messages") {
         if (this.value === "error") {
-          Accounts._loginButtonsSession.set('errorMessage', 'An error occurred!  Gee golly gosh.');
+          Accounts._loginButtonsSession.errorMessage('An error occurred!  Gee golly gosh.');
         } else if (this.value === "info") {
-          Accounts._loginButtonsSession.set('infoMessage', 'Here is some information that is crucial.');
+          Accounts._loginButtonsSession.infoMessage('Here is some information that is crucial.');
         } else if (this.value === "clear") {
           Accounts._loginButtonsSession.resetMessages();
         }
