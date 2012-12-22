@@ -9,7 +9,7 @@ Package.on_use(function(api) {
   api.use('templating', 'client');
 
   api.add_files(
-    ['linkedin_configure.html', 'linkedin_configure.js'],
+    ['accounts_linkedin.css', 'linkedin_configure.html', 'linkedin_configure.js'],
     'client');
 
   api.add_files('linkedin_common.js', ['client', 'server']);
