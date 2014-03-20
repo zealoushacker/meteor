@@ -1,6 +1,8 @@
 <head>
   <title>Documentation - Meteor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="Description"
+  content="Meteor is an open-source JavaScript platform for building top-quality web apps in a fraction of the time, whether you're an expert developer or just getting started."/>
   <link rel="icon" href="favicon.ico" type="image/x-icon" />
   <link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
 </head>
@@ -11,7 +13,7 @@
   </div>
   <div id="main">
     <div id="top"></div>
-    <h1 class="main-headline">Meteor 0.5.4</h1>
+    {{> headline }}
     {{> introduction }}
     {{> concepts }}
     {{> api }}
@@ -35,6 +37,10 @@
 </div>
 </template>
 
+<!-- This only is displayed on narrow displays (eg phone) -->
+<template name="headline">
+  <h1 class="main-headline">Meteor {{release}}</h1>
+</template>
 
 
 <template name="dtdd_helper">

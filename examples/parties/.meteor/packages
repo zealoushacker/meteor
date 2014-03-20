@@ -3,6 +3,7 @@
 # 'meteor add' and 'meteor remove' will edit this file for you,
 # but you can also edit it by hand.
 
+standard-app-packages
 preserve-inputs
 accounts-ui
 accounts-password
@@ -11,3 +12,4 @@ bootstrap
 email
 accounts-facebook
 accounts-twitter
+audit-argument-checks

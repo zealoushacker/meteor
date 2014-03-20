@@ -1,4 +1,7 @@
-METEOR_VERSION = "0.5.4";
+Template.headline.release = function () {
+  return Meteor.release || "(checkout)";
+};
+
 
 Meteor.startup(function () {
   // XXX this is broken by the new multi-page layout.  Also, it was
@@ -6,6 +9,9 @@ Meteor.startup(function () {
   // colors. Just turn it off for now. We'll fix it and turn it on
   // later.
   // prettyPrint();
+
+  //mixpanel tracking
+  mixpanel.track('docs');
 
   // returns a jQuery object suitable for setting scrollTop to
   // scroll the page, either directly for via animate()
@@ -41,10 +47,17 @@ Meteor.startup(function () {
   }
 
   var ignore_waypoints = false;
-  $('body').delegate('h1, h2, h3', 'waypoint.reached', function (evt, dir) {
+  var lastTimeout = null;
+  $('h1, h2, h3').waypoint(function (evt, dir) {
     if (!ignore_waypoints) {
       var active = (dir === "up") ? this.prev : this;
-      Session.set("section", active.id);
+      if (active.id) {
+        if (lastTimeout)
+          Meteor.clearTimeout(lastTimeout);
+        lastTimeout = Meteor.setTimeout(function () {
+          Session.set("section", active.id);
+        }, 200);
+      }
     }
   });
 
@@ -53,6 +66,9 @@ Meteor.startup(function () {
   };
 
   var scrollToSection = function (section) {
+    if (! $(section).length)
+      return;
+
     ignore_waypoints = true;
     Session.set("section", section.substr(1));
     scroller().animate({
@@ -67,6 +83,8 @@ Meteor.startup(function () {
     evt.preventDefault();
     var sel = $(this).attr('href');
     scrollToSection(sel);
+
+    mixpanel.track('docs_navigate_' + sel);
   });
 
   // Make external links open in a new tab.
@@ -74,19 +92,22 @@ Meteor.startup(function () {
 });
 
 var toc = [
-  {name: "Meteor " + METEOR_VERSION, id: "top"}, [
+  {name: "Meteor " + Template.headline.release(), id: "top"}, [
     "Quick start",
     "Seven principles",
     "Resources"
   ],
   "Concepts", [
+    "What is Meteor?",
     "Structuring your app",
     "Data and security",
     "Reactivity",
     "Live HTML",
     "Templates",
-    "Smart packages",
-    "Deploying"
+    "Using packages",
+    "Namespacing",
+    "Deploying",
+    "Writing packages"
   ],
 
   "API", [
@@ -95,21 +116,23 @@ var toc = [
       "Meteor.isServer",
       "Meteor.startup",
       "Meteor.absoluteUrl",
-      "Meteor.settings"
+      "Meteor.settings",
+      "Meteor.release"
     ],
 
     "Publish and subscribe", [
       "Meteor.publish", [
         {instance: "this", name: "userId", id: "publish_userId"},
-        {instance: "this", name: "set", id: "publish_set"},
-        {instance: "this", name: "unset", id: "publish_unset"},
-        {instance: "this", name: "complete", id: "publish_complete"},
-        {instance: "this", name: "flush", id: "publish_flush"},
+        {instance: "this", name: "added", id: "publish_added"},
+        {instance: "this", name: "changed", id: "publish_changed"},
+        {instance: "this", name: "removed", id: "publish_removed"},
+        {instance: "this", name: "ready", id: "publish_ready"},
         {instance: "this", name: "onStop", id: "publish_onstop"},
-        {instance: "this", name: "stop", id: "publish_stop"}
+        {instance: "this", name: "error", id: "publish_error"},
+        {instance: "this", name: "stop", id: "publish_stop"},
+        {instance: "this", name: "connection", id: "publish_connection"}
       ],
-      "Meteor.subscribe",
-      "Meteor.autosubscribe"
+      "Meteor.subscribe"
     ],
 
     {name: "Methods", id: "methods_header"}, [
@@ -117,7 +140,8 @@ var toc = [
         {instance: "this", name: "userId", id: "method_userId"},
         {instance: "this", name: "setUserId", id: "method_setUserId"},
         {instance: "this", name: "isSimulation", id: "method_issimulation"},
-        {instance: "this", name: "unblock", id: "method_unblock"}
+        {instance: "this", name: "unblock", id: "method_unblock"},
+        {instance: "this", name: "connection", id: "method_connection"}
       ],
       "Meteor.Error",
       "Meteor.call",
@@ -127,7 +151,9 @@ var toc = [
     {name: "Server connections", id: "connections"}, [
       "Meteor.status",
       "Meteor.reconnect",
-      "Meteor.connect"
+      "Meteor.disconnect",
+      "Meteor.onConnection",
+      "DDP.connect"
     ],
 
     {name: "Collections", id: "collections"}, [
@@ -136,6 +162,7 @@ var toc = [
         {instance: "collection", name: "findOne"},
         {instance: "collection", name: "insert"},
         {instance: "collection", name: "update"},
+        {instance: "collection", name: "upsert"},
         {instance: "collection", name: "remove"},
         {instance: "collection", name: "allow"},
         {instance: "collection", name: "deny"}
@@ -147,10 +174,11 @@ var toc = [
         {instance: "cursor", name: "fetch"},
         {instance: "cursor", name: "count"},
         {instance: "cursor", name: "rewind"},
-        {instance: "cursor", name: "observe"}
+        {instance: "cursor", name: "observe"},
+        {instance: "cursor", name: "observeChanges", id: "observe_changes"}
       ],
       {type: "spacer"},
-      "Meteor.uuid",
+      {name: "Meteor.Collection.ObjectID", id: "collection_object_id"},
       {type: "spacer"},
       {name: "Selectors", style: "noncode"},
       {name: "Modifiers", style: "noncode"},
@@ -160,6 +188,7 @@ var toc = [
 
     "Session", [
       "Session.set",
+      {name: "Session.setDefault", id: "session_set_default"},
       "Session.get",
       "Session.equals"
     ],
@@ -170,12 +199,9 @@ var toc = [
       "Meteor.users",
       "Meteor.loggingIn",
       "Meteor.logout",
+      "Meteor.logoutOtherClients",
       "Meteor.loginWithPassword",
-      {name: "Meteor.loginWithFacebook", id: "meteor_loginwithexternalservice"},
-      {name: "Meteor.loginWithGithub", id: "meteor_loginwithexternalservice"},
-      {name: "Meteor.loginWithGoogle", id: "meteor_loginwithexternalservice"},
-      {name: "Meteor.loginWithTwitter", id: "meteor_loginwithexternalservice"},
-      {name: "Meteor.loginWithWeibo", id: "meteor_loginwithexternalservice"},
+      {name: "Meteor.loginWith<Service>", id: "meteor_loginwithexternalservice"},
       {type: "spacer"},
 
       {name: "{{currentUser}}", id: "template_currentuser"},
@@ -185,7 +211,10 @@ var toc = [
       "Accounts.config",
       "Accounts.ui.config",
       "Accounts.validateNewUser",
-      "Accounts.onCreateUser"
+      "Accounts.onCreateUser",
+      "Accounts.validateLoginAttempt",
+      "Accounts.onLogin",
+      {name: "Accounts.onLoginFailure", id: "accounts_onlogin"},
     ],
 
     {name: "Passwords", id: "accounts_passwords"}, [
@@ -227,6 +256,12 @@ var toc = [
       {name: "Reactivity isolation", style: "noncode", id: "isolate"}
      ],
 
+    "Match", [
+      "check",
+      "Match.test",
+      {name: "Match patterns", style: "noncode"}
+    ],
+
     "Timers", [
       "Meteor.setTimeout",
       "Meteor.setInterval",
@@ -234,16 +269,28 @@ var toc = [
       "Meteor.clearInterval"
     ],
 
-    "Meteor.deps", [
-      {name: "Meteor.deps.Context", id: "context"}, [
-        {instance: "context", name: "run"},
-        {instance: "context", name: "onInvalidate", id: "oninvalidate"},
-        {instance: "context", name: "invalidate"}
+    "Deps", [
+      "Deps.autorun",
+      "Deps.flush",
+      "Deps.nonreactive",
+      "Deps.active",
+      "Deps.currentComputation",
+      "Deps.onInvalidate",
+      "Deps.afterFlush",
+      "Deps.Computation", [
+        {instance: "computation", name: "stop", id: "computation_stop"},
+        {instance: "computation", name: "invalidate", id: "computation_invalidate"},
+        {instance: "computation", name: "onInvalidate", id: "computation_oninvalidate"},
+        {instance: "computation", name: "stopped", id: "computation_stopped"},
+        {instance: "computation", name: "invalidated", id: "computation_invalidated"},
+        {instance: "computation", name: "firstRun", id: "computation_firstrun"}
       ],
-      {name: "Meteor.deps.Context.current", id: "current"},
-      "Meteor.autorun",
-      "Meteor.flush"
-    // ],
+      "Deps.Dependency", [
+        {instance: "dependency", name: "changed", id: "dependency_changed"},
+        {instance: "dependency", name: "depend", id: "dependency_depend"},
+        {instance: "dependency", name: "hasDependents", id: "dependency_hasdependents"}
+      ]
+    ],
 
     // "Environment Variables", [
     //   "Meteor.EnvironmentVariable", [
@@ -251,30 +298,57 @@ var toc = [
     //     {instance: "env_var", name: "withValue", id: "env_var_withvalue"},
     //     {instance: "env_var", name: "bindEnvironment", id: "env_var_bindenvironment"}
     //   ]
+    //],
+
+    {name: "EJSON", id: "ejson"}, [
+      {name: "EJSON.parse", id: "ejson_parse"},
+      {name: "EJSON.stringify", id: "ejson_stringify"},
+      {name: "EJSON.fromJSONValue", id: "ejson_from_json_value"},
+      {name: "EJSON.toJSONValue", id: "ejson_to_json_value"},
+      {name: "EJSON.equals", id: "ejson_equals"},
+      {name: "EJSON.clone", id: "ejson_clone"},
+      {name: "EJSON.newBinary", id: "ejson_new_binary"},
+      {name: "EJSON.isBinary", id: "ejson_is_binary"},
+      {name: "EJSON.addType", id: "ejson_add_type"},
+      [
+        {instance: "instance", id: "ejson_type_typeName", name: "typeName"},
+        {instance: "instance", id: "ejson_type_toJSONValue", name: "toJSONValue"},
+        {instance: "instance", id: "ejson_type_clone", name: "clone"},
+        {instance: "instance", id: "ejson_type_equals", name: "equals"}
+      ]
     ],
 
-    "Meteor.http", [
-      "Meteor.http.call",
-      {name: "Meteor.http.get", id: "meteor_http_get"},
-      {name: "Meteor.http.post", id: "meteor_http_post"},
-      {name: "Meteor.http.put", id: "meteor_http_put"},
-      {name: "Meteor.http.del", id: "meteor_http_del"}
+
+    "HTTP", [
+      "HTTP.call",
+      {name: "HTTP.get"},
+      {name: "HTTP.post"},
+      {name: "HTTP.put"},
+      {name: "HTTP.del"}
     ],
     "Email", [
       "Email.send"
+    ],
+    {name: "Assets", id: "assets"}, [
+      {name: "Assets.getText", id: "assets_getText"},
+      {name: "Assets.getBinary", id: "assets_getBinary"}
     ]
   ],
 
   "Packages", [ [
     "accounts-ui",
     "amplify",
+    "appcache",
+    "audit-argument-checks",
     "backbone",
     "bootstrap",
+    "browser-policy",
     "coffeescript",
     "d3",
     "force-ssl",
     "jquery",
     "less",
+    "random",
     "spiderable",
     "stylus",
     "showdown",

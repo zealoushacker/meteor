@@ -6,8 +6,11 @@ Tinytest.add("less - presence", function(test) {
   d.node().style.display = 'block';
 
   var p = d.node().firstChild;
-  var leftBorder = getStyleProperty(p, 'border-left-style');
-  test.equal(leftBorder, "dashed");
+  test.equal(getStyleProperty(p, 'border-left-style'), "dashed");
+
+  // test @import
+  test.equal(getStyleProperty(p, 'border-right-style'), "dotted");
+  test.equal(getStyleProperty(p, 'border-bottom-style'), "double");
 
   d.kill();
 });

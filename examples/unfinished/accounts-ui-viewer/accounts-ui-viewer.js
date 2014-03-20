@@ -26,7 +26,7 @@ if (Meteor.isClient) {
         } else {
           // make sure we have a username
           Meteor.users.update(Meteor.userId(),
-                              { $set: { username: Meteor.uuid() }});
+                              { $set: { username: Random.id() }});
         }
       }
     } else if (key === "signupFields") {
@@ -116,7 +116,7 @@ if (Meteor.isClient) {
 
   var fakeLogin = function (callback) {
     Accounts.createUser(
-      {username: Meteor.uuid(),
+      {username: Random.id(),
        password: "password",
        profile: { name: "Joe Schmoe" }},
       function () {
@@ -162,12 +162,12 @@ if (Meteor.isClient) {
     'click #controlpane button': function (event) {
       if (this.key === "fakeConfig") {
         var service = this.value;
-        if (! Accounts.loginServiceConfiguration.findOne({service: service}))
-          Accounts.loginServiceConfiguration.insert(
+        if (! ServiceConfiguration.configurations.findOne({service: service}))
+          ServiceConfiguration.configurations.insert(
             {service: service, fake: true});
       } else if (this.key === "unconfig") {
         var service = this.value;
-        Accounts.loginServiceConfiguration.remove({service: service});
+        ServiceConfiguration.configurations.remove({service: service});
       } else if (this.key === "messages") {
         if (this.value === "error") {
           Accounts._loginButtonsSession.errorMessage('An error occurred!  Gee golly gosh.');

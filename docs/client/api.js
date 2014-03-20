@@ -57,12 +57,148 @@ Template.api.absoluteUrl = {
 Template.api.settings = {
   id: "meteor_settings",
   name: "Meteor.settings",
-  locus: "Server",
-  descr: ["`Meteor.settings` contains any deployment-specific options that were " +
-          "provided using the `--settings` option for `meteor run` or `meteor deploy`. " +
-          "If you provide the `--settings` option, `Meteor.settings` will be the " +
-          "JSON object in the file you specify.  Otherwise, `Meteor.settings` will " +
-          "be an empty object."]
+  locus: "Anywhere",
+  descr: ["`Meteor.settings` contains deployment-specific configuration options. " +
+          "You can initialize settings by passing the `--settings` option (which takes a file containing JSON data) to " +
+          "`meteor run` or `meteor deploy`, " +
+          "or by setting your server process's `METEOR_SETTINGS` environment variable to a JSON string. " +
+          "If you don't provide any settings, `Meteor.settings` will be an empty object.  If the settings object contains a key named `public`, then " +
+          "`Meteor.settings.public` will be available on the client as well as the server.  All other properties of `Meteor.settings` are only defined on the server."]
+};
+
+Template.api.release = {
+  id: "meteor_release",
+  name: "Meteor.release",
+  locus: "Anywhere",
+  descr: ["`Meteor.release` is a string containing the name of the " +
+          "[release](#meteorupdate) with which the project was built (for " +
+          "example, `\"" +
+          Meteor.release +
+          "\"`). It is `undefined` if the project was built using a git " +
+          "checkout of Meteor."]
+};
+
+Template.api.ejsonParse = {
+  id: "ejson_parse",
+  name: "EJSON.parse(str)",
+  locus: "Anywhere",
+  args: [ {name: "str", type: "String", descr: "A string to parse into an EJSON value."} ],
+  descr: ["Parse a string into an EJSON value. Throws an error if the string is not valid EJSON."]
+},
+
+Template.api.ejsonStringify = {
+  id: "ejson_stringify",
+  name: "EJSON.stringify(val, [options])",
+  locus: "Anywhere",
+  args: [ {name: "val", type: "EJSON-compatible value", descr: "A value to stringify."} ],
+  options: [
+    {name: "indent",
+     type: "Boolean, Integer, or String",
+     descr: "Indents objects and arrays for easy readability.  When `true`, indents by 2 spaces; when an integer, indents by that number of spaces; and when a string, uses the string as the indentation pattern."},
+    {name: "canonical",
+     type: "Boolean",
+     descr: "When `true`, stringifies keys in an object in sorted order."}
+  ],
+  descr: ["Serialize a value to a string.\n\nFor EJSON values, the serialization " +
+          "fully represents the value. For non-EJSON values, serializes the " +
+          "same way as `JSON.stringify`."]
+},
+
+
+Template.api.ejsonFromJSONValue = {
+  id: "ejson_from_json_value",
+  name: "EJSON.fromJSONValue(val)",
+  locus: "Anywhere",
+  args: [ {name: "val", type: "JSON-compatible value", descr: "A value to deserialize into EJSON."} ],
+  descr: ["Deserialize an EJSON value from its  plain JSON representation."]
+},
+
+Template.api.ejsonToJSONValue = {
+  id: "ejson_to_json_value",
+  name: "EJSON.toJSONValue(val)",
+  locus: "Anywhere",
+  args: [ {name: "val", type: "EJSON-compatible value", descr: "A value to serialize to plain JSON."} ],
+  descr: ["Serialize an EJSON-compatible value into its plain JSON representation."]
+},
+
+Template.api.ejsonEquals = {
+  id: "ejson_equals",
+  name: "EJSON.equals(a, b, [options])",
+  locus: "Anywhere",
+  args: [ {name: "a", type: "EJSON-compatible object"},
+          {name: "b", type: "EJSON-compatible object"} ],
+  options: [
+    {name: "keyOrderSensitive",
+     type: "Boolean",
+     descr: "Compare in key sensitive order, if supported by the JavaScript implementation.  For example, `{a: 1, b: 2}` is equal to `{b: 2, a: 1}` only when `keyOrderSensitive` is `false`.  The default is `false`."}
+  ],
+  descr: ["Return true if `a` and `b` are equal to each other.  Return false otherwise." +
+          "  Uses the `equals` method on `a` if present, otherwise performs a deep comparison."]
+},
+
+Template.api.ejsonClone = {
+  id: "ejson_clone",
+  name: "EJSON.clone(val)",
+  locus: "Anywhere",
+  args: [ {name: "val", type: "EJSON-compatible value", descr: "A value to copy."} ],
+  descr: ["Return a deep copy of `val`."]
+},
+
+Template.api.ejsonNewBinary = {
+  id: "ejson_new_binary",
+  name: "EJSON.newBinary(size)",
+  locus: "Anywhere",
+  args: [ {name: "size", type: "Number", descr: "The number of bytes of binary data to allocate."} ],
+  descr: ["Allocate a new buffer of binary data that EJSON can serialize."]
+},
+
+Template.api.ejsonIsBinary = {
+  id: "ejson_is_binary",
+  name: "EJSON.isBinary(x)",
+  locus: "Anywhere",
+  descr: ["Returns true if `x` is a buffer of binary data, as returned from [`EJSON.newBinary`](#ejson_new_binary)."]
+},
+
+Template.api.ejsonAddType = {
+  id: "ejson_add_type",
+  name: "EJSON.addType(name, factory)",
+  locus: "Anywhere",
+  args: [
+    {name: "name",
+     type: "String",
+     descr: "A tag for your custom type; must be unique among custom data types defined in your project, and must match the result of your type's `typeName` method."
+    },
+    {name: "factory",
+     type: "Function",
+     descr: "A function that deserializes a JSON-compatible value into an instance of your type.  This should match the serialization performed by your type's `toJSONValue` method."
+    }
+  ],
+  descr: ["Add a custom datatype to EJSON."]
+};
+
+Template.api.ejsonTypeClone = {
+  id: "ejson_type_clone",
+  name: "<i>instance</i>.clone()",
+  descr: ["Return a value `r` such that `this.equals(r)` is true, and modifications to `r` do not affect `this` and vice versa."]
+};
+
+Template.api.ejsonTypeEquals = {
+  id: "ejson_type_equals",
+  name: "<i>instance</i>.equals(other)",
+  args: [ {name: "other", type: "object", descr: "Another object to compare this to."}],
+  descr: ["Return `true` if `other` has a value equal to `this`; `false` otherwise."]
+};
+
+Template.api.ejsonTypeName = {
+  id: "ejson_type_typeName",
+  name: "<i>instance</i>.typeName()",
+  descr: ["Return the tag used to identify this type.  This must match the tag used to register this type with [`EJSON.addType`](#ejson_add_type)."]
+};
+
+Template.api.ejsonTypeToJSONValue = {
+  id: "ejson_type_toJSONValue",
+  name: "<i>instance</i>.toJSONValue()",
+  descr: ["Serialize this instance into a JSON-compatible value."]
 };
 
 Template.api.publish = {
@@ -73,74 +209,92 @@ Template.api.publish = {
   args: [
     {name: "name",
      type: "String",
-     descr: "Name of the attribute set.  If `null`, the set has no name, and the record set is automatically sent to all connected clients."},
+     descr: "Name of the record set.  If `null`, the set has no name, and the record set is automatically sent to all connected clients."},
     {name: "func",
      type: "Function",
      descr: "Function called on the server each time a client subscribes.  Inside the function, `this` is the publish handler object, described below.  If the client passed arguments to `subscribe`, the function is called with the same arguments."}
   ]
 };
 
-Template.api.subscription_set = {
-  id: "publish_set",
-  name: "<i>this</i>.set(collection, id, attributes)",
+Template.api.subscription_added = {
+  id: "publish_added",
+  name: "<i>this</i>.added(collection, id, fields)",
   locus: "Server",
-  descr: ["Call inside the publish function.  Queues a command to set attributes."],
+  descr: ["Call inside the publish function.  Informs the subscriber that a document has been added to the record set."],
   args: [
     {name: "collection",
      type: "String",
-     descr: "The name of the collection that should be affected."
+     descr: "The name of the collection that contains the new document."
     },
     {name: "id",
      type: "String",
-     descr: "The ID of the document that should be affected."
+     descr: "The new document's ID."
     },
-    {name: "attributes",
+    {name: "fields",
      type: "Object",
-     descr: "Dictionary of attribute keys and their values."
+     descr: "The fields in the new document.  If `_id` is present it is ignored."
     }
   ]
 };
 
-Template.api.subscription_unset = {
-  id: "publish_unset",
-  name: "<i>this</i>.unset(collection, id, keys)",
+Template.api.subscription_changed = {
+  id: "publish_changed",
+  name: "<i>this</i>.changed(collection, id, fields)",
   locus: "Server",
-  descr: ["Call inside the publish function.  Queues a command to unset attributes."],
+  descr: ["Call inside the publish function.  Informs the subscriber that a document in the record set has been modified."],
   args: [
     {name: "collection",
      type: "String",
-     descr: "The name of the collection that should be affected."
+     descr: "The name of the collection that contains the changed document."
     },
     {name: "id",
      type: "String",
-     descr: "The ID of the document that should be affected."
+     descr: "The changed document's ID."
     },
-    {name: "keys",
-     type: "Array",
-     descr: "Array of attribute keys."
+    {name: "fields",
+     type: "Object",
+     descr: "The fields in the document that have changed, together with their new values.  If a field is not present in `fields` it was left unchanged; if it is present in `fields` and has a value of `undefined` it was removed from the document.  If `_id` is present it is ignored."
     }
   ]
 };
 
-Template.api.subscription_complete = {
-  id: "publish_complete",
-  name: "<i>this</i>.complete()",
+Template.api.subscription_removed = {
+  id: "publish_removed",
+  name: "<i>this</i>.removed(collection, id)",
   locus: "Server",
-  descr: ["Call inside the publish function.  Queues a command to mark this subscription as complete (initial attributes are set)."]
+  descr: ["Call inside the publish function.  Informs the subscriber that a document has been removed from the record set."],
+  args: [
+    {name: "collection",
+     type: "String",
+     descr: "The name of the collection that the document has been removed from."
+    },
+    {name: "id",
+     type: "String",
+     descr: "The ID of the document that has been removed."
+    }
+  ]
 };
 
-Template.api.subscription_flush = {
-  id: "publish_flush",
-  name: "<i>this</i>.flush()",
+Template.api.subscription_ready = {
+  id: "publish_ready",
+  name: "<i>this</i>.ready()",
   locus: "Server",
-  descr: ["Call inside the publish function.  Sends all the pending set, unset, and complete messages to the client."]
+  descr: ["Call inside the publish function.  Informs the subscriber that an initial, complete snapshot of the record set has been sent.  This will trigger a call on the client to the `onReady` callback passed to  [`Meteor.subscribe`](#meteor_subscribe), if any."]
+};
+
+
+Template.api.subscription_error = {
+  id: "publish_error",
+  name: "<i>this</i>.error(error)",
+  locus: "Server",
+  descr: ["Call inside the publish function.  Stops this client's subscription, triggering a call on the client to the `onError` callback passed to [`Meteor.subscribe`](#meteor_subscribe), if any. If `error` is not a [`Meteor.Error`](#meteor_error), it will be [sanitized](#meteor_error)."]
 };
 
 Template.api.subscription_stop = {
   id: "publish_stop",
   name: "<i>this</i>.stop()",
   locus: "Server",
-  descr: ["Call inside the publish function.  Stops this client's subscription."]
+  descr: ["Call inside the publish function.  Stops this client's subscription; the `onError` callback is *not* invoked on the client."]
 };
 
 Template.api.subscription_onStop = {
@@ -164,34 +318,30 @@ Template.api.subscription_userId = {
 };
 
 
+Template.api.subscription_connection = {
+  id: "publish_connection",
+  name: "<i>this</i>.connection",
+  locus: "Server",
+  descr: ["Access inside the publish function. The incoming [connection](#meteor_onconnection) for this subscription."]
+};
+
+
 Template.api.subscribe = {
   id: "meteor_subscribe",
-  name: "Meteor.subscribe(name [, arg1, arg2, ... ] [, onComplete])",
+  name: "Meteor.subscribe(name [, arg1, arg2, ... ] [, callbacks])",
   locus: "Client",
-  descr: ["Subscribe to a record set.  Returns a handle that provides a stop() method, which will stop the subscription."],
+  descr: ["Subscribe to a record set.  Returns a handle that provides `stop()` and `ready()` methods."],
   args: [
     {name: "name",
      type: "String",
-     descr: "Name of the subscription.  Matches name of server's publish() call."},
+     descr: "Name of the subscription.  Matches the name of the server's `publish()` call."},
     {name: "arg1, arg2, ...",
      type: "Any",
      descr: "Optional arguments passed to publisher function on server."},
-    {name: "onComplete",
-     type: "Function",
-     descr: "If the last argument is a Function, it is called without arguments when the server marks the subscription as complete."}
+    {name: "callbacks",
+     type: "Function or Object",
+     descr: "Optional. May include `onError` and `onReady` callbacks. If a function is passed instead of an object, it is interpreted as an `onReady` callback."}
   ]
-};
-
-Template.api.autosubscribe = {
-  id: "meteor_autosubscribe",
-  name: "Meteor.autosubscribe(func)",
-  locus: "Client",
-  descr: ["Automatically set up and tear down subscriptions."],
-  args: [
-    {name: "func",
-     type: "Function",
-     descr: "A [`reactive`](#reactivity) function that sets up some subscriptions by calling [`Meteor.subscribe`](#meteor_subscribe). It will automatically be re-run when its dependencies change."}
-    ]
 };
 
 Template.api.methods = {
@@ -239,6 +389,13 @@ Template.api.method_invocation_isSimulation = {
   descr: ["Access inside a method invocation.  Boolean value, true if this invocation is a stub."]
 };
 
+Template.api.method_invocation_connection = {
+  id: "method_connection",
+  name: "<i>this</i>.connection",
+  locus: "Server",
+  descr: ["Access inside a method invocation. The [connection](#meteor_onconnection) this method was received on. `null` if the method is not associated with a connection, eg. a server initiated method call."]
+};
+
 Template.api.error = {
   id: "meteor_error",
   name: "new Meteor.Error(error, reason, details)",
@@ -267,7 +424,7 @@ Template.api.meteor_call = {
      type: "String",
      descr: "Name of method to invoke"},
     {name: "param1, param2, ...",
-     type: "JSON",
+     type: "EJSON",
      descr: "Optional method arguments"},
     {name: "asyncCallback",
      type: "Function",
@@ -317,15 +474,35 @@ Template.api.reconnect = {
     "This method does nothing if the client is already connected."]
 };
 
-Template.api.connect = {
-  id: "meteor_connect",
-  name: "Meteor.connect(url)",
+Template.api.disconnect = {
+  id: "meteor_disconnect",
+  name: "Meteor.disconnect()",
   locus: "Client",
+  descr: [
+    "Disconnect the client from the server."]
+};
+
+Template.api.connect = {
+  id: "ddp_connect",
+  name: "DDP.connect(url)",
+  locus: "Anywhere",
   descr: ["Connect to the server of a different Meteor application to subscribe to its document sets and invoke its remote methods."],
   args: [
     {name: "url",
      type: "String",
      descr: "The URL of another Meteor application."}
+  ]
+};
+
+Template.api.onConnection = {
+  id: "meteor_onconnection",
+  name: "Meteor.onConnection(callback)",
+  locus: "Server",
+  descr: ["Register a callback to be called when a new DDP connection is made to the server."],
+  args: [
+    {name: "callback",
+     type: "function",
+     descr: "The function to call when a new DDP connection is established."}
   ]
 };
 
@@ -342,9 +519,20 @@ Template.api.meteor_collection = {
      descr: "The name of the collection.  If null, creates an unmanaged (unsynchronized) local collection."}
   ],
   options: [
-    {name: "manager",
+    {name: "connection",
      type: "Object",
-     descr: "The Meteor connection that will manage this collection, defaults to `Meteor` if null.  Unmanaged (`name` is null) collections cannot specify a manager."
+     descr: "The server connection that will manage this collection. Uses the default connection if not specified.  Pass the return value of calling [`DDP.connect`](#ddp_connect) to specify a different server. Pass `null` to specify no connection. Unmanaged (`name` is null) collections cannot specify a connection."
+    },
+    {name: "idGeneration",
+     type: "String",
+     descr: "The method of generating the `_id` fields of new documents in this collection.  Possible values:\n\n" +
+     " - **`'STRING'`**: random strings\n" +
+     " - **`'MONGO'`**:  random [`Meteor.Collection.ObjectID`](#collection_object_id) values\n\n" +
+     "The default id generation technique is `'STRING'`."
+    },
+    {name: "transform",
+     type: "Function",
+     descr: "An optional transformation function. Documents will be passed through this function before being returned from `fetch` or `findOne`, and before being passed to callbacks of `observe`, `map`, `forEach`, `allow`, and `deny`. Transforms are *not* applied for the callbacks of `observeChanges` or to cursors returned from publish functions."
     }
   ]
 };
@@ -356,13 +544,13 @@ Template.api.find = {
   descr: ["Find the documents in a collection that match the selector."],
   args: [
     {name: "selector",
-     type: "Object: Mongo selector, or String",
+     type: "Mongo selector (Object or String)",
      type_link: "selectors",
      descr: "The query"}
   ],
   options: [
     {name: "sort",
-     type: "Object: sort specifier",
+     type: "Sort specifier",
      type_link: "sortspecifiers",
      descr: "Sort order (default: natural order)"},
     {name: "skip",
@@ -372,12 +560,15 @@ Template.api.find = {
      type: "Number",
      descr: "Maximum number of results to return"},
     {name: "fields",
-     type: "Object: field specifier",
+     type: "Field specifier",
      type_link: "fieldspecifiers",
-     descr: "(Server only) Dictionary of fields to return or exclude."},
+     descr: "Dictionary of fields to return or exclude."},
     {name: "reactive",
      type: "Boolean",
-     descr: "(Client only) Default `true`; pass `false` to disable reactivity"}
+     descr: "(Client only) Default `true`; pass `false` to disable reactivity"},
+    {name: "transform",
+     type: "Function",
+     descr: "Overrides `transform` on the  [`Collection`](#collections) for this cursor.  Pass `null` to disable transformation."}
   ]
 };
 
@@ -388,25 +579,29 @@ Template.api.findone = {
   descr: ["Finds the first document that matches the selector, as ordered by sort and skip options."],
   args: [
     {name: "selector",
-     type: "Object: Mongo selector, or String",
+     type: "Mongo selector (Object or String)",
      type_link: "selectors",
      descr: "The query"}
   ],
   options: [
     {name: "sort",
-     type: "Object: sort specifier",
+     type: "Sort specifier",
      type_link: "sortspecifiers",
      descr: "Sort order (default: natural order)"},
     {name: "skip",
      type: "Number",
      descr: "Number of results to skip at the beginning"},
     {name: "fields",
-     type: "Object: field specifier",
+     type: "Field specifier",
      type_link: "fieldspecifiers",
-     descr: "(Server only) Dictionary of fields to return or exclude."},
+     descr: "Dictionary of fields to return or exclude."},
     {name: "reactive",
      type: "Boolean",
-     descr: "(Client only) Default true; pass false to disable reactivity"}
+     descr: "(Client only) Default true; pass false to disable reactivity"},
+    {name: "transform",
+     type: "Function",
+     descr:  "Overrides `transform` on the [`Collection`](#collections) for this cursor.  Pass `null` to disable transformation."
+    }
   ]
 };
 
@@ -418,7 +613,7 @@ Template.api.insert = {
   args: [
     {name: "doc",
      type: "Object",
-     descr: "The document to insert. Should not yet have an _id attribute."},
+     descr: "The document to insert. May not yet have an _id attribute, in which case Meteor will generate one for you."},
     {name: "callback",
      type: "Function",
      descr: "Optional.  If present, called with an error object as the first argument and, if no error, the _id as the second."}
@@ -429,19 +624,49 @@ Template.api.update = {
   id: "update",
   name: "<em>collection</em>.update(selector, modifier, [options], [callback])",
   locus: "Anywhere",
-  descr: ["Modify one or more documents in the collection"],
+  descr: ["Modify one or more documents in the collection. Returns the number of affected documents."],
   args: [
     {name: "selector",
-     type: "Object: Mongo selector, or String",
+     type: "Mongo selector, or object id",
      type_link: "selectors",
      descr: "Specifies which documents to modify"},
     {name: "modifier",
-     type: "Object: Mongo modifier",
+     type: "Mongo modifier",
      type_link: "modifiers",
      descr: "Specifies how to modify the documents"},
     {name: "callback",
      type: "Function",
-     descr: "Optional.  If present, called with an error object as its argument."}
+     descr: "Optional.  If present, called with an error object as the first argument and, if no error, the number of affected documents as the second."}
+  ],
+  options: [
+    {name: "multi",
+     type: "Boolean",
+     descr: "True to modify all matching documents; false to only modify one of the matching documents (the default)."},
+    {name: "upsert",
+     type: "Boolean",
+     descr: "True to insert a document if no matching documents are found."}
+  ]
+};
+
+Template.api.upsert = {
+  id: "upsert",
+  name: "<em>collection</em>.upsert(selector, modifier, [options], [callback])",
+  locus: "Anywhere",
+  descr: ["Modify one or more documents in the collection, or insert one if no matching documents were found. " +
+          "Returns an object with keys `numberAffected` (the number of documents modified) " +
+          " and `insertedId` (the unique _id of the document that was inserted, if any)."],
+  args: [
+    {name: "selector",
+     type: "Mongo selector, or object id",
+     type_link: "selectors",
+     descr: "Specifies which documents to modify"},
+    {name: "modifier",
+     type: "Mongo modifier",
+     type_link: "modifiers",
+     descr: "Specifies how to modify the documents"},
+    {name: "callback",
+     type: "Function",
+     descr: "Optional.  If present, called with an error object as the first argument and, if no error, the number of affected documents as the second."}
   ],
   options: [
     {name: "multi",
@@ -450,6 +675,7 @@ Template.api.update = {
   ]
 };
 
+
 Template.api.remove = {
   id: "remove",
   name: "<em>collection</em>.remove(selector, [callback])",
@@ -457,7 +683,7 @@ Template.api.remove = {
   descr: ["Remove documents from the collection"],
   args: [
     {name: "selector",
-     type: "Object: Mongo selector, or String",
+     type: "Mongo selector, or object id",
      type_link: "selectors",
      descr: "Specifies which documents to remove"},
     {name: "callback",
@@ -477,7 +703,10 @@ Template.api.allow = {
      descr: "Functions that look at a proposed modification to the database and return true if it should be allowed."},
     {name: "fetch",
      type: "Array of String",
-     descr: "Optional performance enhancement. Limits the fields that will be fetched from the database for inspection by your `update` and `remove` functions."}
+     descr: "Optional performance enhancement. Limits the fields that will be fetched from the database for inspection by your `update` and `remove` functions."},
+    {name: "transform",
+     type: "Function",
+     descr: "Overrides `transform` on the  [`Collection`](#collections).  Pass `null` to disable transformation."}
   ]
 };
 
@@ -492,7 +721,10 @@ Template.api.deny = {
      descr: "Functions that look at a proposed modification to the database and return true if it should be denied, even if an `allow` rule says otherwise."},
     {name: "fetch",
      type: "Array of Strings",
-     descr: "Optional performance enhancement. Limits the fields that will be fetched from the database for inspection by your `update` and `remove` functions."}
+     descr: "Optional performance enhancement. Limits the fields that will be fetched from the database for inspection by your `update` and `remove` functions."},
+    {name: "transform",
+     type: "Function",
+     descr:  "Overrides `transform` on the  [`Collection`](#collections).  Pass `null` to disable transformation."}
   ]
 };
 
@@ -513,25 +745,31 @@ Template.api.cursor_fetch = {
 
 Template.api.cursor_foreach = {
   id: "foreach",
-  name: "<em>cursor</em>.forEach(callback)",
+  name: "<em>cursor</em>.forEach(callback, [thisArg])",
   locus: "Anywhere",
   descr: ["Call `callback` once for each matching document, sequentially and synchronously."],
   args: [
     {name: "callback",
      type: "Function",
-     descr: "Function to call."}
+     descr: "Function to call. It will be called with three arguments: the document, a 0-based index, and <em>cursor</em> itself."},
+    {name: "thisArg",
+     type: "Any",
+     descr: "An object which will be the value of `this` inside `callback`."}
   ]
 };
 
 Template.api.cursor_map = {
   id: "map",
-  name: "<em>cursor</em>.map(callback)",
+  name: "<em>cursor</em>.map(callback, [thisArg])",
   locus: "Anywhere",
   descr: ["Map callback over all matching documents.  Returns an Array."],
   args: [
     {name: "callback",
      type: "Function",
-     descr: "Function to call."}
+     descr: "Function to call. It will be called with three arguments: the document, a 0-based index, and <em>cursor</em> itself."},
+    {name: "thisArg",
+     type: "Any",
+     descr: "An object which will be the value of `this` inside `callback`."}
   ]
 };
 
@@ -550,17 +788,41 @@ Template.api.cursor_observe = {
   descr: ["Watch a query.  Receive callbacks as the result set changes."],
   args: [
     {name: "callbacks",
-     type: "Object (may include <code>added</code>, <code>changed</code>, <code>moved</code>, and <code>removed</code> callbacks)",
+     type: "Object",
      descr: "Functions to call to deliver the result set as it changes"}
   ]
 };
 
-Template.api.uuid = {
-  id: "meteor_uuid",
-  name: "Meteor.uuid()",
+Template.api.cursor_observe_changes = {
+  id: "observe_changes",
+  name: "<em>cursor</em>.observeChanges(callbacks)",
   locus: "Anywhere",
-  descr: ["Returns a Universally Unique Identifier."],
+  descr: ["Watch a query.  Receive callbacks as the result set changes.  Only the differences between the old and new documents are passed to the callbacks."],
+  args: [
+    {name: "callbacks",
+     type: "Object",
+     descr: "Functions to call to deliver the result set as it changes"}
+  ]
+};
+
+Template.api.id = {
+  id: "meteor_id",
+  name: "Random.id()",
+  locus: "Anywhere",
+  descr: ["Return a unique identifier."],
   args: [ ]
+};
+
+Template.api.collection_object_id = {
+  id: "collection_object_id",
+  name: "new Meteor.Collection.ObjectID(hexString)",
+  locus: "Anywhere",
+  descr: ["Create a Mongo-style `ObjectID`.  If you don't specify a `hexString`, the `ObjectID` will generated randomly (not using MongoDB's ID construction rules)."],
+  args: [ {
+    name: "hexString",
+    type: "String",
+    descr: ["Optional.  The 24-character hexadecimal contents of the ObjectID to create"]
+  }]
 };
 
 Template.api.selectors = {
@@ -583,70 +845,151 @@ Template.api.fieldspecifiers = {
   name: "Field Specifiers"
 };
 
-Template.api.Context = {
-  id: "context",
-  name: "new Meteor.deps.Context",
-  locus: "Client",
-  descr: ["Create an invalidation context. Invalidation contexts are used to run a piece of code, and record its dependencies so it can be rerun later if one of its inputs changes.", "An invalidation context is basically just a list of callbacks for an event that can fire only once. The [`onInvalidate`](#oninvalidate) method adds a callback to the list, and the [`invalidate`](#invalidate) method fires the event."]
-};
+////// DEPS
 
-Template.api.run = {
-  id: "run",
-  name: "<em>context</em>.run(func)",
+Template.api.deps_autorun = {
+  id: "deps_autorun",
+  name: "Deps.autorun(runFunc)",
   locus: "Client",
-  descr: ["Run some code inside an evaluation context."],
+  descr: ["Run a function now and rerun it later whenever its dependencies change. Returns a Computation object that can be used to stop or observe the rerunning."],
   args: [
-    {name: "func",
+    {name: "runFunc",
      type: "Function",
-     descr: "The code to run"}
+     descr: "The function to run. It receives one argument: the Computation object that will be returned."}
   ]
 };
 
-Template.api.onInvalidate = {
-  id: "oninvalidate",
-  name: "<em>context</em>.onInvalidate(callback)",
+Template.api.deps_flush = {
+  id: "deps_flush",
+  name: "Deps.flush()",
   locus: "Client",
-  descr: ["Registers `callback` to be called when this context is invalidated. `callback` will be run exactly once."],
+  descr: ["Process all reactive updates immediately and ensure that all invalidated computations are rerun."]
+};
+
+Template.api.deps_nonreactive = {
+  id: "deps_nonreactive",
+  name: "Deps.nonreactive(func)",
+  locus: "Client",
+  descr: ["Run a function without tracking dependencies."],
+  args: [
+    {name: "func",
+     type: "Function",
+     descr: "A function to call immediately."}
+  ]
+};
+
+Template.api.deps_active = {
+  id: "deps_active",
+  name: "Deps.active",
+  locus: "Client",
+  descr: ["True if there is a current computation, meaning that dependencies on reactive data sources will be tracked and potentially cause the current computation to be rerun."]
+};
+
+Template.api.deps_currentcomputation = {
+  id: "deps_currentcomputation",
+  name: "Deps.currentComputation",
+  locus: "Client",
+  descr: ["The current computation, or `null` if there isn't one.  The current computation is the [`Deps.Computation`](#deps_computation) object created by the innermost active call to `Deps.autorun`, and it's the computation that gains dependencies when reactive data sources are accessed."]
+};
+
+Template.api.deps_oninvalidate = {
+  id: "deps_oninvalidate",
+  name: "Deps.onInvalidate(callback)",
+  locus: "Client",
+  descr: ["Registers a new [`onInvalidate`](#computation_oninvalidate) callback on the current computation (which must exist), to be called immediately when the current computation is invalidated or stopped."],
   args: [
     {name: "callback",
      type: "Function",
-     descr: "Function to be called on invalidation. Receives one argument, the context that was invalidated."}
+     descr: "A callback function that will be invoked as `func(c)`, where `c` is the computation on which the callback is registered."}
   ]
 };
 
-Template.api.invalidate = {
-  id: "invalidate",
-  name: "<em>context</em>.invalidate()",
+Template.api.deps_afterflush = {
+  id: "deps_afterflush",
+  name: "Deps.afterFlush(callback)",
   locus: "Client",
-  descr: ["Add this context to the list of contexts that will have their [`onInvalidate`](#oninvalidate) callbacks called by the next call to [`Meteor.flush`](#meteor_flush)."]
-};
-
-Template.api.current = {
-  id: "current",
-  name: "Meteor.deps.Context.current",
-  locus: "Client",
-  descr: ["The current [`invalidation context`](#context), or `null` if not being called from inside [`run`](#run)."]
-};
-
-Template.api.autorun = {
-  id: "meteor_autorun",
-  name: "Meteor.autorun(func)",
-  locus: "Client",
-  descr: ["Run a function and rerun it whenever its dependencies change. Returns a handle that provides a `stop` method, which will prevent further reruns."],
+  descr: ["Schedules a function to be called during the next flush, or later in the current flush if one is in progress, after all invalidated computations have been rerun.  The function will be run once and not on subsequent flushes unless `afterFlush` is called again."],
   args: [
-    {name: "func",
+    {name: "callback",
      type: "Function",
-     descr: "The function to run. It receives one argument: the same handle that `Meteor.autorun` returns."}
+     descr: "A function to call at flush time."}
   ]
 };
 
-Template.api.flush = {
-  id: "meteor_flush",
-  name: "Meteor.flush()",
+Template.api.computation_stop = {
+  id: "computation_stop",
+  name: "<em>computation</em>.stop()",
   locus: "Client",
-  descr: ["Ensure that any reactive updates have finished. Allow auto-updating DOM elements to be cleaned up if they are offscreen."]
+  descr: ["Prevents this computation from rerunning."]
 };
 
+Template.api.computation_invalidate = {
+  id: "computation_invalidate",
+  name: "<em>computation</em>.invalidate()",
+  locus: "Client",
+  descr: ["Invalidates this computation so that it will be rerun."]
+};
+
+Template.api.computation_oninvalidate = {
+  id: "computation_oninvalidate",
+  name: "<em>computation</em>.onInvalidate(callback)",
+  locus: "Client",
+  descr: ["Registers `callback` to run when this computation is next invalidated, or runs it immediately if the computation is already invalidated.  The callback is run exactly once and not upon future invalidations unless `onInvalidate` is called again after the computation becomes valid again."],
+  args: [
+    {name: "callback",
+     type: "Function",
+     descr: "Function to be called on invalidation. Receives one argument, the computation that was invalidated."}
+  ]
+};
+
+Template.api.computation_stopped = {
+  id: "computation_stopped",
+  name: "<em>computation</em>.stopped",
+  locus: "Client",
+  descr: ["True if this computation has been stopped."]
+};
+
+Template.api.computation_invalidated = {
+  id: "computation_invalidated",
+  name: "<em>computation</em>.invalidated",
+  locus: "Client",
+  descr: ["True if this computation has been invalidated (and not yet rerun), or if it has been stopped."]
+};
+
+Template.api.computation_firstrun = {
+  id: "computation_firstrun",
+  name: "<em>computation</em>.firstRun",
+  locus: "Client",
+  descr: ["True during the initial run of the computation at the time `Deps.autorun` is called, and false on subsequent reruns and at other times."]
+};
+
+Template.api.dependency_changed = {
+  id: "dependency_changed",
+  name: "<em>dependency</em>.changed()",
+  locus: "Client",
+  descr: ["Invalidate all dependent computations immediately and remove them as dependents."]
+};
+
+Template.api.dependency_depend = {
+  id: "dependency_depend",
+  name: "<em>dependency</em>.depend([fromComputation])",
+  locus: "Client",
+  descr: ["Declares that the current computation (or `fromComputation` if given) depends on `dependency`.  The computation will be invalidated the next time `dependency` changes.", "If there is no current computation and `depend()` is called with no arguments, it does nothing and returns false.", "Returns true if the computation is a new dependent of `dependency` rather than an existing one."],
+  args: [
+    {name: "fromComputation",
+     type: "Deps.Computation",
+     descr: "An optional computation declared to depend on `dependency` instead of the current computation."}
+  ]
+};
+
+Template.api.dependency_hasdependents = {
+  id: "dependency_hasdependents",
+  name: "<em>dependency</em>.hasDependents()",
+  locus: "Client",
+  descr: ["True if this Dependency has one or more dependent Computations, which would be invalidated if this Dependency were to change."]
+};
+
+//////
 
 // writeFence
 // invalidationCrossbar
@@ -759,6 +1102,20 @@ Template.api.logout = {
   ]
 };
 
+Template.api.logoutOtherClients = {
+  id: "meteor_logoutotherclients",
+  name: "Meteor.logoutOtherClients([callback])",
+  locus: "Client",
+  descr: ["Log out other clients logged in as the current user, but does not log out the client that calls this function."],
+  args: [
+    {
+      name: "callback",
+      type: "Function",
+      descr: "Optional callback. Called with no arguments on success, or with a single `Error` argument on failure."
+    }
+  ]
+};
+
 
 Template.api.loginWithPassword = {
   id: "meteor_loginwithpassword",
@@ -807,6 +1164,11 @@ Template.api.loginWithExternalService = {
       name: "requestOfflineToken",
       type: "Boolean",
       descr: "If true, asks the user for permission to act on their behalf when offline. This stores an additional offline token in the `services` field of the user document. Currently only supported with Google."
+    },
+    {
+      name: "forceApprovalPrompt",
+      type: "Boolean",
+      descr: "If true, forces the user to approve the app's permissions, even if previously approved. Currently only supported with Google."
     }
   ]
 };
@@ -828,6 +1190,16 @@ Template.api.accounts_config = {
       name: "forbidClientAccountCreation",
       type: "Boolean",
       descr: "Calls to [`createUser`](#accounts_createuser) from the client will be rejected. In addition, if you are using [accounts-ui](#accountsui), the \"Create account\" link will not be available."
+    },
+    {
+      name: "restrictCreationByEmailDomain",
+      type: "String or Function",
+      descr: "If set to a string, only allows new users if the domain part of their email address matches the string. If set to a function, only allows new users if the function returns true.  The function is passed the full email address of the proposed new user.  Works with password-based sign-in and external services that expose email addresses (Google, Facebook, GitHub). All existing users still can log in after enabling this option. Example: `Accounts.config({ restrictCreationByEmailDomain: 'school.edu' })`."
+    },
+    {
+      name: "loginExpirationInDays",
+      type: "Number",
+      descr: "The number of days from when a user logs in until their token expires and they are logged out. Defaults to 90. Set to `null` to disable login expiration."
     }
   ]
 };
@@ -885,6 +1257,33 @@ Template.api.accounts_onCreateUser = {
 };
 
 
+Template.api.accounts_validateLoginAttempt = {
+  id: "accounts_validateloginattempt",
+  name: "Accounts.validateLoginAttempt(func)",
+  locus: "Server",
+  descr: ["Validate login attempts."],
+  args: [
+    {
+      name: "func",
+      type: "Function",
+      descr: "Called whenever a login is attempted (either successful or unsuccessful).  A login can be aborted by returning a falsy value or throwing an exception."
+    }
+  ]
+};
+
+Template.api.accounts_onLogin = {
+  id: "accounts_onlogin",
+  name: "Accounts.onLogin(func) and Accounts.onLoginFailure(func)",
+  locus: "Server",
+  descr: ["Register a callback to be called after a login attempt."],
+  args: [
+    {
+      name: "func",
+      type: "Function",
+      descr: "The callback to be called after the login attempt"
+    }
+  ]
+};
 
 Template.api.accounts_createUser = {
   id: "accounts_createuser",
@@ -1098,6 +1497,49 @@ Template.api.accounts_emailTemplates = {
 
 
 
+Template.api.check = {
+  id: "check",
+  name: "check(value, pattern)",
+  locus: "Anywhere",
+  descr: ["Checks that a value matches a [pattern](#matchpatterns). If the value does not match the pattern, throws a `Match.Error`."],
+  args: [
+    {
+      name: "value",
+      type: "Any",
+      descr: "The value to check"
+    },
+    {
+      name: "pattern",
+      type: "Match pattern",
+      descr: "The [pattern](#matchpatterns) to match `value` against"
+    }
+  ]
+};
+
+Template.api.match_test = {
+  id: "match_test",
+  name: "Match.test(value, pattern)",
+  locus: "Anywhere",
+  descr: ["Returns true if the value matches the [pattern](#matchpatterns)."],
+  args: [
+    {
+      name: "value",
+      type: "Any",
+      descr: "The value to check"
+    },
+    {
+      name: "pattern",
+      type: "Match pattern",
+      descr: "The [pattern](#matchpatterns) to match `value` against"
+    }
+  ]
+};
+
+Template.api.matchpatterns = {
+  id: "matchpatterns",
+  name: "Match patterns"
+};
+
 Template.api.setTimeout = {
   id: "meteor_settimeout",
   name: "Meteor.setTimeout(func, delay)",
@@ -1215,13 +1657,28 @@ Template.api.set = {
   id: "session_set",
   name: "Session.set(key, value)",
   locus: "Client",
-  descr: ["Set a variable in the session. Notify any listeners that the value has changed (eg: redraw templates, and rerun any [`Meteor.autosubscribe`](#meteor_autosubscribe) blocks, that called [`Session.get`](#session_get) on this `key`.)"],
+  descr: ["Set a variable in the session. Notify any listeners that the value has changed (eg: redraw templates, and rerun any [`Deps.autorun`](#deps_autorun) computations, that called [`Session.get`](#session_get) on this `key`.)"],
   args: [
     {name: "key",
      type: "String",
      descr: "The key to set, eg, `selectedItem`"},
     {name: "value",
-     type: "JSON-able object or undefined",
+     type: "EJSON-able object or undefined",
+     descr: "The new value for `key`"}
+  ]
+};
+
+Template.api.setDefault = {
+  id: "session_set_default",
+  name: "Session.setDefault(key, value)",
+  locus: "Client",
+  descr: ["Set a variable in the session if it is undefined. Otherwise works exactly the same as [`Session.set`](#session_set)."],
+  args: [
+    {name: "key",
+     type: "String",
+     descr: "The key to set, eg, `selectedItem`"},
+    {name: "value",
+     type: "EJSON-able object or undefined",
      descr: "The new value for `key`"}
   ]
 };
@@ -1230,7 +1687,7 @@ Template.api.get = {
   id: "session_get",
   name: "Session.get(key)",
   locus: "Client",
-  descr: ["Get the value of a session variable. If inside a [`Meteor.deps`](#meteor_deps) context, invalidate the context the next time the value of the variable is changed by [`Session.set`](#session_set). This returns a clone of the session value, so if it's an object or an array, mutating the returned value has no effect on the value stored in the session."],
+  descr: ["Get the value of a session variable. If inside a [reactive computation](#reactivity), invalidate the computation the next time the value of the variable is changed by [`Session.set`](#session_set). This returns a clone of the session value, so if it's an object or an array, mutating the returned value has no effect on the value stored in the session."],
   args: [
     {name: "key",
      type: "String",
@@ -1242,7 +1699,7 @@ Template.api.equals = {
   id: "session_equals",
   name: "Session.equals(key, value)",
   locus: "Client",
-  descr: ["Test if a session variable is equal to a value. If inside a [`Meteor.deps`](#meteor_deps) context, invalidate the context the next time the variable changes to or from the value."],
+  descr: ["Test if a session variable is equal to a value. If inside a [reactive computation](#reactivity), invalidate the computation the next time the variable changes to or from the value."],
   args: [
     {name: "key",
      type: "String",
@@ -1254,8 +1711,8 @@ Template.api.equals = {
 };
 
 Template.api.httpcall = {
-  id: "meteor_http_call",
-  name: "Meteor.http.call(method, url [, options] [, asyncCallback])",
+  id: "http_call",
+  name: "HTTP.call(method, url [, options] [, asyncCallback])",
   locus: "Anywhere",
   descr: ["Perform an outbound HTTP request."],
   args: [
@@ -1301,31 +1758,31 @@ Template.api.httpcall = {
 };
 
 Template.api.http_get = {
-  id: "meteor_http_get",
-  name: "Meteor.http.get(url, [options], [asyncCallback])",
+  id: "http_get",
+  name: "HTTP.get(url, [options], [asyncCallback])",
   locus: "Anywhere",
-  descr: ["Send an HTTP GET request.  Equivalent to `Meteor.http.call(\"GET\", ...)`."]
+  descr: ["Send an HTTP GET request.  Equivalent to `HTTP.call(\"GET\", ...)`."]
 };
 
 Template.api.http_post = {
-  id: "meteor_http_post",
-  name: "Meteor.http.post(url, [options], [asyncCallback])",
+  id: "http_post",
+  name: "HTTP.post(url, [options], [asyncCallback])",
   locus: "Anywhere",
-  descr: ["Send an HTTP POST request.  Equivalent to `Meteor.http.call(\"POST\", ...)`."]
+  descr: ["Send an HTTP POST request.  Equivalent to `HTTP.call(\"POST\", ...)`."]
 };
 
 Template.api.http_put = {
-  id: "meteor_http_put",
-  name: "Meteor.http.put(url, [options], [asyncCallback])",
+  id: "http_put",
+  name: "HTTP.put(url, [options], [asyncCallback])",
   locus: "Anywhere",
-  descr: ["Send an HTTP PUT request.  Equivalent to `Meteor.http.call(\"PUT\", ...)`."]
+  descr: ["Send an HTTP PUT request.  Equivalent to `HTTP.call(\"PUT\", ...)`."]
 };
 
 Template.api.http_del = {
-  id: "meteor_http_del",
-  name: "Meteor.http.del(url, [options], [asyncCallback])",
+  id: "http_del",
+  name: "HTTP.del(url, [options], [asyncCallback])",
   locus: "Anywhere",
-  descr: ["Send an HTTP DELETE request.  Equivalent to `Meteor.http.call(\"DELETE\", ...)`.  (Named `del` to avoid conflict with JavaScript's `delete`.)"]
+  descr: ["Send an HTTP DELETE request.  Equivalent to `HTTP.call(\"DELETE\", ...)`.  (Named `del` to avoid conflict with JavaScript's `delete`.)"]
 };
 
 
@@ -1370,7 +1827,7 @@ Template.api.template_events = {
   descr: ["Specify event handlers for this template."],
   args: [
     {name: "eventMap",
-     type: "Object: event map",
+     type: "Event map",
      type_link: "eventmaps",
      descr: "Event handlers to associate with this template."}
   ]
@@ -1487,7 +1944,50 @@ Template.api.email_send = {
     {name: "html",
      type: "String",
      descr: rfc('mail body (HTML)')
+    },
+    {name: "headers",
+     type: "Object",
+     descr: rfc('custom headers (dictionary)')
     }
   ]
 };
 
+Template.api.assets_getText = {
+  id: "assets_getText",
+  name: "Assets.getText(assetPath, [asyncCallback])",
+  locus: "Server",
+  descr: ["Retrieve the contents of the static server asset as a UTF8-encoded string."],
+  args: [
+    {name: "assetPath",
+     type: "String",
+     descr: "The path of the asset, relative to the application's " +
+     "`private` subdirectory."
+    },
+    {name: "asyncCallback",
+     type: "Function",
+     descr: "Optional callback, which is called asynchronously with the error " +
+     "or result after the function is complete. If not provided, the function " +
+     "runs synchronously."
+    }
+  ]
+};
+
+Template.api.assets_getBinary = {
+  id: "assets_getBinary",
+  name: "Assets.getBinary(assetPath, [asyncCallback])",
+  locus: "Server",
+  descr: ["Retrieve the contents of the static server asset as an [EJSON Binary](#ejson_new_binary)."],
+  args: [
+    {name: "assetPath",
+     type: "String",
+     descr: "The path of the asset, relative to the application's " +
+     "`private` subdirectory."
+    },
+    {name: "asyncCallback",
+     type: "Function",
+     descr: "Optional callback, which is called asynchronously with the error " +
+     "or result after the function is complete. If not provided, the function " +
+     "runs synchronously."
+    }
+  ]
+};

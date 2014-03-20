@@ -19,43 +19,57 @@ Parties.allow({
   insert: function (userId, party) {
     return false; // no cowboy inserts -- use createParty method
   },
-  update: function (userId, parties, fields, modifier) {
-    return _.all(parties, function (party) {
-      if (userId !== party.owner)
-        return false; // not the owner
+  update: function (userId, party, fields, modifier) {
+    if (userId !== party.owner)
+      return false; // not the owner
 
-      var allowed = ["title", "description", "x", "y"];
-      if (_.difference(fields, allowed).length)
-        return false; // tried to write to forbidden field
+    var allowed = ["title", "description", "x", "y"];
+    if (_.difference(fields, allowed).length)
+      return false; // tried to write to forbidden field
 
-      // A good improvement would be to validate the type of the new
-      // value of the field (and if a string, the length.) In the
-      // future Meteor will have a schema system to makes that easier.
-      return true;
-    });
+    // A good improvement would be to validate the type of the new
+    // value of the field (and if a string, the length.) In the
+    // future Meteor will have a schema system to makes that easier.
+    return true;
   },
-  remove: function (userId, parties) {
-    return ! _.any(parties, function (party) {
-      // deny if not the owner, or if other people are going
-      return party.owner !== userId || attending(party) > 0;
-    });
+  remove: function (userId, party) {
+    // You can only remove parties that you created and nobody is going to.
+    return party.owner === userId && attending(party) === 0;
   }
 });
 
-var attending = function (party) {
+attending = function (party) {
   return (_.groupBy(party.rsvps, 'rsvp').yes || []).length;
+};
+
+var NonEmptyString = Match.Where(function (x) {
+  check(x, String);
+  return x.length !== 0;
+});
+
+var Coordinate = Match.Where(function (x) {
+  check(x, Number);
+  return x >= 0 && x <= 1;
+});
+
+createParty = function (options) {
+  var id = Random.id();
+  Meteor.call('createParty', _.extend({ _id: id }, options));
+  return id;
 };
 
 Meteor.methods({
   // options should include: title, description, x, y, public
   createParty: function (options) {
-    options = options || {};
-    if (! (typeof options.title === "string" && options.title.length &&
-           typeof options.description === "string" &&
-           options.description.length &&
-           typeof options.x === "number" && options.x >= 0 && options.x <= 1 &&
-           typeof options.y === "number" && options.y >= 0 && options.y <= 1))
-      throw new Meteor.Error(400, "Required parameter missing");
+    check(options, {
+      title: NonEmptyString,
+      description: NonEmptyString,
+      x: Coordinate,
+      y: Coordinate,
+      public: Match.Optional(Boolean),
+      _id: Match.Optional(NonEmptyString)
+    });
+
     if (options.title.length > 100)
       throw new Meteor.Error(413, "Title too long");
     if (options.description.length > 1000)
@@ -63,7 +77,9 @@ Meteor.methods({
     if (! this.userId)
       throw new Meteor.Error(403, "You must be logged in");
 
-    return Parties.insert({
+    var id = options._id || Random.id();
+    Parties.insert({
+      _id: id,
       owner: this.userId,
       x: options.x,
       y: options.y,
@@ -73,9 +89,12 @@ Meteor.methods({
       invited: [],
       rsvps: []
     });
+    return id;
   },
 
   invite: function (partyId, userId) {
+    check(partyId, String);
+    check(userId, String);
     var party = Parties.findOne(partyId);
     if (! party || party.owner !== this.userId)
       throw new Meteor.Error(404, "No such party");
@@ -104,6 +123,8 @@ Meteor.methods({
   },
 
   rsvp: function (partyId, rsvp) {
+    check(partyId, String);
+    check(rsvp, String);
     if (! this.userId)
       throw new Meteor.Error(403, "You must be logged in to RSVP");
     if (! _.contains(['yes', 'no', 'maybe'], rsvp))
@@ -147,7 +168,7 @@ Meteor.methods({
 ///////////////////////////////////////////////////////////////////////////////
 // Users
 
-var displayName = function (user) {
+displayName = function (user) {
   if (user.profile && user.profile.name)
     return user.profile.name;
   return user.emails[0].address;

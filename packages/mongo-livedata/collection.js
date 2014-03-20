@@ -1,47 +1,86 @@
-// manager, if given, is a LivedataClient or LivedataServer
+// options.connection, if given, is a LivedataClient or LivedataServer
 // XXX presently there is no way to destroy/clean up a Collection
+
 Meteor.Collection = function (name, options) {
   var self = this;
-  if (options && options.methods) {
-    // Backwards compatibility hack with original signature (which passed
-    // "manager" directly instead of in options. (Managers must have a "methods"
-    // method.)
-    // XXX remove before 1.0
-    options = {manager: options};
-  }
-  options = _.extend({
-    manager: undefined,
-    _driver: undefined,
-    _preventAutopublish: false
-  }, options);
+  if (! (self instanceof Meteor.Collection))
+    throw new Error('use "new" to construct a Meteor.Collection');
 
   if (!name && (name !== null)) {
     Meteor._debug("Warning: creating anonymous collection. It will not be " +
                   "saved or synchronized over the network. (Pass null for " +
                   "the collection name to turn off this warning.)");
+    name = null;
   }
 
-  // note: nameless collections never have a manager
-  self._manager = name && (options.manager ||
-                           (Meteor.isClient ?
-                            Meteor.default_connection : Meteor.default_server));
+  if (name !== null && typeof name !== "string") {
+    throw new Error(
+      "First argument to new Meteor.Collection must be a string or null");
+  }
+
+  if (options && options.methods) {
+    // Backwards compatibility hack with original signature (which passed
+    // "connection" directly instead of in options. (Connections must have a "methods"
+    // method.)
+    // XXX remove before 1.0
+    options = {connection: options};
+  }
+  // Backwards compatibility: "connection" used to be called "manager".
+  if (options && options.manager && !options.connection) {
+    options.connection = options.manager;
+  }
+  options = _.extend({
+    connection: undefined,
+    idGeneration: 'STRING',
+    transform: null,
+    _driver: undefined,
+    _preventAutopublish: false
+  }, options);
+
+  switch (options.idGeneration) {
+  case 'MONGO':
+    self._makeNewID = function () {
+      return new Meteor.Collection.ObjectID();
+    };
+    break;
+  case 'STRING':
+  default:
+    self._makeNewID = function () {
+      return Random.id();
+    };
+    break;
+  }
+
+  self._transform = LocalCollection.wrapTransform(options.transform);
+
+  if (! name || options.connection === null)
+    // note: nameless collections never have a connection
+    self._connection = null;
+  else if (options.connection)
+    self._connection = options.connection;
+  else if (Meteor.isClient)
+    self._connection = Meteor.connection;
+  else
+    self._connection = Meteor.server;
 
   if (!options._driver) {
-    if (name && self._manager === Meteor.default_server &&
-        Meteor._RemoteCollectionDriver)
-      options._driver = Meteor._RemoteCollectionDriver;
-    else
-      options._driver = Meteor._LocalCollectionDriver;
+    if (name && self._connection === Meteor.server &&
+        typeof MongoInternals !== "undefined" &&
+        MongoInternals.defaultRemoteCollectionDriver) {
+      options._driver = MongoInternals.defaultRemoteCollectionDriver();
+    } else {
+      options._driver = LocalCollectionDriver;
+    }
   }
 
-  self._collection = options._driver.open(name);
+  self._collection = options._driver.open(name, self._connection);
   self._name = name;
 
-  if (name && self._manager.registerStore) {
+  if (self._connection && self._connection.registerStore) {
     // OK, we're going to be a slave, replicating some remote
     // database, except possibly with some temporary divergence while
     // we have unacknowledged RPC's.
-    var ok = self._manager.registerStore(name, {
+    var ok = self._connection.registerStore(name, {
       // Called at the beginning of a batch of updates. batchSize is the number
       // of update calls to expect.
       //
@@ -68,47 +107,55 @@ Meteor.Collection = function (name, options) {
       // Apply an update.
       // XXX better specify this interface (not in terms of a wire message)?
       update: function (msg) {
-        var doc = self._collection.findOne(msg.id);
+        var mongoId = LocalCollection._idParse(msg.id);
+        var doc = self._collection.findOne(mongoId);
 
         // Is this a "replace the whole doc" message coming from the quiescence
         // of method writes to an object? (Note that 'undefined' is a valid
         // value meaning "remove it".)
-        if (_.has(msg, 'replace')) {
+        if (msg.msg === 'replace') {
           var replace = msg.replace;
-          // An empty doc is equivalent to a nonexistent doc.
-          if (replace && _.isEmpty(_.without(_.keys(replace), '_id')))
-            replace = undefined;
           if (!replace) {
             if (doc)
-              self._collection.remove(msg.id);
+              self._collection.remove(mongoId);
           } else if (!doc) {
-            self._collection.insert(_.extend({_id: msg.id}, replace));
+            self._collection.insert(replace);
           } else {
             // XXX check that replace has no $ ops
-            self._collection.update(msg.id, replace);
+            self._collection.update(mongoId, replace);
           }
           return;
+        } else if (msg.msg === 'added') {
+          if (doc) {
+            throw new Error("Expected not to find a document already present for an add");
+          }
+          self._collection.insert(_.extend({_id: mongoId}, msg.fields));
+        } else if (msg.msg === 'removed') {
+          if (!doc)
+            throw new Error("Expected to find a document already present for removed");
+          self._collection.remove(mongoId);
+        } else if (msg.msg === 'changed') {
+          if (!doc)
+            throw new Error("Expected to find a document to change");
+          if (!_.isEmpty(msg.fields)) {
+            var modifier = {};
+            _.each(msg.fields, function (value, key) {
+              if (value === undefined) {
+                if (!modifier.$unset)
+                  modifier.$unset = {};
+                modifier.$unset[key] = 1;
+              } else {
+                if (!modifier.$set)
+                  modifier.$set = {};
+                modifier.$set[key] = value;
+              }
+            });
+            self._collection.update(mongoId, modifier);
+          }
+        } else {
+          throw new Error("I don't know how to deal with this message");
         }
 
-        // ... otherwise we're applying set/unset messages against specific
-        // fields.
-        if (doc
-            && (!msg.set)
-            && _.difference(_.keys(doc), msg.unset, ['_id']).length === 0) {
-          // what's left is empty, just remove it.  cannot fail.
-          self._collection.remove(msg.id);
-        } else if (doc) {
-          var mutator = {$set: msg.set, $unset: {}};
-          _.each(msg.unset, function (propname) {
-            mutator.$unset[propname] = 1;
-          });
-          // XXX error check return value from update.
-          self._collection.update(msg.id, mutator);
-        } else {
-          // XXX error check return value from insert.
-          if (msg.set)
-            self._collection.insert(_.extend({_id: msg.id}, msg.set));
-        }
       },
 
       // Called at the end of a batch of updates.
@@ -133,12 +180,12 @@ Meteor.Collection = function (name, options) {
   self._defineMutationMethods();
 
   // autopublish
-  if (!options._preventAutopublish &&
-      self._manager && self._manager.onAutopublish)
-    self._manager.onAutopublish(function () {
-      var handler = function () { return self.find(); };
-      self._manager.publish(null, handler, {is_auto: true});
-    });
+  if (Package.autopublish && !options._preventAutopublish && self._connection
+      && self._connection.publish) {
+    self._connection.publish(null, function () {
+      return self.find();
+    }, {is_auto: true});
+  }
 };
 
 ///
@@ -147,21 +194,63 @@ Meteor.Collection = function (name, options) {
 
 
 _.extend(Meteor.Collection.prototype, {
+
+  _getFindSelector: function (args) {
+    if (args.length == 0)
+      return {};
+    else
+      return args[0];
+  },
+
+  _getFindOptions: function (args) {
+    var self = this;
+    if (args.length < 2) {
+      return { transform: self._transform };
+    } else {
+      return _.extend({
+        transform: self._transform
+      }, args[1]);
+    }
+  },
+
   find: function (/* selector, options */) {
     // Collection.find() (return all docs) behaves differently
     // from Collection.find(undefined) (return 0 docs).  so be
-    // careful about preserving the length of arguments.
+    // careful about the length of arguments.
     var self = this;
-    return self._collection.find.apply(self._collection, _.toArray(arguments));
+    var argArray = _.toArray(arguments);
+    return self._collection.find(self._getFindSelector(argArray),
+                                 self._getFindOptions(argArray));
   },
 
   findOne: function (/* selector, options */) {
     var self = this;
-    return self._collection.findOne.apply(self._collection, _.toArray(arguments));
+    var argArray = _.toArray(arguments);
+    return self._collection.findOne(self._getFindSelector(argArray),
+                                    self._getFindOptions(argArray));
   }
 
 });
 
+Meteor.Collection._publishCursor = function (cursor, sub, collection) {
+  var observeHandle = cursor.observeChanges({
+    added: function (id, fields) {
+      sub.added(collection, id, fields);
+    },
+    changed: function (id, fields) {
+      sub.changed(collection, id, fields);
+    },
+    removed: function (id) {
+      sub.removed(collection, id);
+    }
+  });
+
+  // We don't call sub.ready() here: it gets called in livedata_server, after
+  // possibly calling _publishCursor on multiple returned cursors.
+
+  // register stop callback (expects lambda w/ no args).
+  sub.onStop(function () {observeHandle.stop();});
+};
 
 // protect against dangerous selectors.  falsey and {_id: falsey} are both
 // likely programmer error, and not what you want, particularly for destructive
@@ -174,40 +263,74 @@ Meteor.Collection._rewriteSelector = function (selector) {
 
   if (!selector || (('_id' in selector) && !selector._id))
     // can't match anything
-    return {_id: Meteor.uuid()};
+    return {_id: Random.id()};
 
   var ret = {};
   _.each(selector, function (value, key) {
+    // Mongo supports both {field: /foo/} and {field: {$regex: /foo/}}
     if (value instanceof RegExp) {
-      // XXX should also do this translation at lower levels (eg if the outer
-      // level is $and/$or/$nor, or if there's an $elemMatch)
-      ret[key] = {$regex: value.source};
-      var regexOptions = '';
-      // JS RegExp objects support 'i', 'm', and 'g'. Mongo regex $options
-      // support 'i', 'm', 'x', and 's'. So we support 'i' and 'm' here.
-      if (value.ignoreCase)
-        regexOptions += 'i';
-      if (value.multiline)
-        regexOptions += 'm';
-      if (regexOptions)
-        ret[key].$options = regexOptions;
+      ret[key] = convertRegexpToMongoSelector(value);
+    } else if (value && value.$regex instanceof RegExp) {
+      ret[key] = convertRegexpToMongoSelector(value.$regex);
+      // if value is {$regex: /foo/, $options: ...} then $options
+      // override the ones set on $regex.
+      if (value.$options !== undefined)
+        ret[key].$options = value.$options;
     }
-    else
+    else if (_.contains(['$or','$and','$nor'], key)) {
+      // Translate lower levels of $and/$or/$nor
+      ret[key] = _.map(value, function (v) {
+        return Meteor.Collection._rewriteSelector(v);
+      });
+    } else {
       ret[key] = value;
+    }
   });
   return ret;
 };
 
-// 'insert' immediately returns the inserted document's new _id.  The
-// others return nothing.
+// convert a JS RegExp object to a Mongo {$regex: ..., $options: ...}
+// selector
+var convertRegexpToMongoSelector = function (regexp) {
+  check(regexp, RegExp); // safety belt
+
+  var selector = {$regex: regexp.source};
+  var regexOptions = '';
+  // JS RegExp objects support 'i', 'm', and 'g'. Mongo regex $options
+  // support 'i', 'm', 'x', and 's'. So we support 'i' and 'm' here.
+  if (regexp.ignoreCase)
+    regexOptions += 'i';
+  if (regexp.multiline)
+    regexOptions += 'm';
+  if (regexOptions)
+    selector.$options = regexOptions;
+
+  return selector;
+};
+
+var throwIfSelectorIsNotId = function (selector, methodName) {
+  if (!LocalCollection._selectorIsIdPerhapsAsObject(selector)) {
+    throw new Meteor.Error(
+      403, "Not permitted. Untrusted code may only " + methodName +
+        " documents by ID.");
+  }
+};
+
+// 'insert' immediately returns the inserted document's new _id.
+// The others return values immediately if you are in a stub, an in-memory
+// unmanaged collection, or a mongo-backed collection and you don't pass a
+// callback. 'update' and 'remove' return the number of affected
+// documents. 'upsert' returns an object with keys 'numberAffected' and, if an
+// insert happened, 'insertedId'.
 //
 // Otherwise, the semantics are exactly like other methods: they take
 // a callback as an optional last argument; if no callback is
 // provided, they block until the operation is complete, and throw an
 // exception if it fails; if a callback is provided, then they don't
-// necessarily block, and they call the callback when they finish with
-// error and result arguments.  (The insert method provides the
-// document ID as its result; update and remove don't provide a result.)
+// necessarily block, and they call the callback when they finish with error and
+// result arguments.  (The insert method provides the document ID as its result;
+// update and remove provide the number of affected docs as the result; upsert
+// provides an object with numberAffected and maybe insertedId.)
 //
 // On the client, blocking is impossible, so if a callback
 // isn't provided, they just return immediately and any error
@@ -227,55 +350,106 @@ _.each(["insert", "update", "remove"], function (name) {
     var self = this;
     var args = _.toArray(arguments);
     var callback;
+    var insertId;
     var ret;
 
     if (args.length && args[args.length - 1] instanceof Function)
       callback = args.pop();
-
-    if (Meteor.isClient && !callback) {
-      // Client can't block, so it can't report errors by exception,
-      // only by callback. If they forget the callback, give them a
-      // default one that logs the error, so they aren't totally
-      // baffled if their writes don't work because their database is
-      // down.
-      callback = function (err) {
-        if (err)
-          Meteor._debug(name + " failed: " + (err.reason || err.stack));
-      };
-    }
 
     if (name === "insert") {
       if (!args.length)
         throw new Error("insert requires an argument");
       // shallow-copy the document and generate an ID
       args[0] = _.extend({}, args[0]);
-      if ('_id' in args[0])
-        throw new Error("Do not pass an _id to insert. Meteor will generate the _id for you.");
-      ret = args[0]._id = Meteor.uuid();
+      if ('_id' in args[0]) {
+        insertId = args[0]._id;
+        if (!insertId || !(typeof insertId === 'string'
+              || insertId instanceof Meteor.Collection.ObjectID))
+          throw new Error("Meteor requires document _id fields to be non-empty strings or ObjectIDs");
+      } else {
+        insertId = args[0]._id = self._makeNewID();
+      }
     } else {
       args[0] = Meteor.Collection._rewriteSelector(args[0]);
+
+      if (name === "update") {
+        // Mutate args but copy the original options object. We need to add
+        // insertedId to options, but don't want to mutate the caller's options
+        // object. We need to mutate `args` because we pass `args` into the
+        // driver below.
+        var options = args[2] = _.clone(args[2]) || {};
+        if (options && typeof options !== "function" && options.upsert) {
+          // set `insertedId` if absent.  `insertedId` is a Meteor extension.
+          if (options.insertedId) {
+            if (!(typeof options.insertedId === 'string'
+                  || options.insertedId instanceof Meteor.Collection.ObjectID))
+              throw new Error("insertedId must be string or ObjectID");
+          } else {
+            options.insertedId = self._makeNewID();
+          }
+        }
+      }
     }
 
-    if (self._manager && self._manager !== Meteor.default_server) {
+    // On inserts, always return the id that we generated; on all other
+    // operations, just return the result from the collection.
+    var chooseReturnValueFromCollectionResult = function (result) {
+      if (name === "insert")
+        return insertId;
+      else
+        return result;
+    };
+
+    var wrappedCallback;
+    if (callback) {
+      wrappedCallback = function (error, result) {
+        callback(error, ! error && chooseReturnValueFromCollectionResult(result));
+      };
+    }
+
+    if (self._connection && self._connection !== Meteor.server) {
       // just remote to another endpoint, propagate return value or
       // exception.
-      if (callback) {
-        // asynchronous: on success, callback should return ret
-        // (document ID for insert, undefined for update and
-        // remove), not the method's result.
-        self._manager.apply(self._prefix + name, args, function (error, result) {
-          callback(error, !error && ret);
-        });
-      } else {
-        // synchronous: propagate exception
-        self._manager.apply(self._prefix + name, args);
+
+      var enclosing = DDP._CurrentInvocation.get();
+      var alreadyInSimulation = enclosing && enclosing.isSimulation;
+
+      if (Meteor.isClient && !wrappedCallback && ! alreadyInSimulation) {
+        // Client can't block, so it can't report errors by exception,
+        // only by callback. If they forget the callback, give them a
+        // default one that logs the error, so they aren't totally
+        // baffled if their writes don't work because their database is
+        // down.
+        // Don't give a default callback in simulation, because inside stubs we
+        // want to return the results from the local collection immediately and
+        // not force a callback.
+        wrappedCallback = function (err) {
+          if (err)
+            Meteor._debug(name + " failed: " + (err.reason || err.stack));
+        };
       }
+
+      if (!alreadyInSimulation && name !== "insert") {
+        // If we're about to actually send an RPC, we should throw an error if
+        // this is a non-ID selector, because the mutation methods only allow
+        // single-ID selectors. (If we don't throw here, we'll see flicker.)
+        throwIfSelectorIsNotId(args[0], name);
+      }
+
+      ret = chooseReturnValueFromCollectionResult(
+        self._connection.apply(self._prefix + name, args, wrappedCallback)
+      );
 
     } else {
       // it's my collection.  descend into the collection object
       // and propagate any exception.
+      args.push(wrappedCallback);
       try {
-        self._collection[name].apply(self._collection, args);
+        // If the user provided a callback and the collection implements this
+        // operation asynchronously, then queryRet will be undefined, and the
+        // result will be returned through the callback instead.
+        var queryRet = self._collection[name].apply(self._collection, args);
+        ret = chooseReturnValueFromCollectionResult(queryRet);
       } catch (e) {
         if (callback) {
           callback(e);
@@ -283,16 +457,26 @@ _.each(["insert", "update", "remove"], function (name) {
         }
         throw e;
       }
-
-      // on success, return *ret*, not the manager's return value.
-      callback && callback(null, ret);
     }
 
     // both sync and async, unless we threw an exception, return ret
-    // (new document ID for insert, undefined otherwise).
+    // (new document ID for insert, num affected for update/remove, object with
+    // numberAffected and maybe insertedId for upsert).
     return ret;
   };
 });
+
+Meteor.Collection.prototype.upsert = function (selector, modifier,
+                                               options, callback) {
+  var self = this;
+  if (! callback && typeof options === "function") {
+    callback = options;
+    options = {};
+  }
+  return self.update(selector, modifier,
+              _.extend({}, options, { _returnObject: true, upsert: true }),
+              callback);
+};
 
 // We'll actually design an index API later. For now, we just pass through to
 // Mongo's, but make it synchronous.
@@ -302,6 +486,26 @@ Meteor.Collection.prototype._ensureIndex = function (index, options) {
     throw new Error("Can only call _ensureIndex on server collections");
   self._collection._ensureIndex(index, options);
 };
+Meteor.Collection.prototype._dropIndex = function (index) {
+  var self = this;
+  if (!self._collection._dropIndex)
+    throw new Error("Can only call _dropIndex on server collections");
+  self._collection._dropIndex(index);
+};
+Meteor.Collection.prototype._dropCollection = function () {
+  var self = this;
+  if (!self._collection.dropCollection)
+    throw new Error("Can only call _dropCollection on server collections");
+  self._collection.dropCollection();
+};
+Meteor.Collection.prototype._createCappedCollection = function (byteSize) {
+  var self = this;
+  if (!self._collection._createCappedCollection)
+    throw new Error("Can only call _createCappedCollection on server collections");
+  self._collection._createCappedCollection(byteSize);
+};
+
+Meteor.Collection.ObjectID = LocalCollection._ObjectID;
 
 ///
 /// Remote methods and access control.
@@ -340,7 +544,7 @@ Meteor.Collection.prototype._ensureIndex = function (index, options) {
 (function () {
   var addValidator = function(allowOrDeny, options) {
     // validate keys
-    var VALID_KEYS = ['insert', 'update', 'remove', 'fetch'];
+    var VALID_KEYS = ['insert', 'update', 'remove', 'fetch', 'transform'];
     _.each(_.keys(options), function (key) {
       if (!_.contains(VALID_KEYS, key))
         throw new Error(allowOrDeny + ": Invalid key: " + key);
@@ -354,6 +558,17 @@ Meteor.Collection.prototype._ensureIndex = function (index, options) {
         if (!(options[name] instanceof Function)) {
           throw new Error(allowOrDeny + ": Value for `" + name + "` must be a function");
         }
+
+        // If the transform is specified at all (including as 'null') in this
+        // call, then take that; otherwise, take the transform from the
+        // collection.
+        if (options.transform === undefined) {
+          options[name].transform = self._transform;  // already wrapped
+        } else {
+          options[name].transform = LocalCollection.wrapTransform(
+            options.transform);
+        }
+
         self._validators[name][allowOrDeny].push(options[name]);
       }
     });
@@ -377,6 +592,7 @@ Meteor.Collection.prototype._ensureIndex = function (index, options) {
   };
 })();
 
+
 Meteor.Collection.prototype._defineMutationMethods = function() {
   var self = this;
 
@@ -384,16 +600,17 @@ Meteor.Collection.prototype._defineMutationMethods = function() {
   // allow/deny semantics. If false, use insecure mode semantics.
   self._restricted = false;
 
-  // Insecure mode (default to allowing writes). Defaults to 'undefined'
-  // which means use the global Meteor.Collection.insecure.  This
-  // property can be overriden by tests or packages wishing to change
-  // insecure mode behavior of their collections.
+  // Insecure mode (default to allowing writes). Defaults to 'undefined' which
+  // means insecure iff the insecure package is loaded. This property can be
+  // overriden by tests or packages wishing to change insecure mode behavior of
+  // their collections.
   self._insecure = undefined;
 
   self._validators = {
     insert: {allow: [], deny: []},
     update: {allow: [], deny: []},
     remove: {allow: [], deny: []},
+    upsert: {allow: [], deny: []}, // dummy arrays; can't set these!
     fetch: [],
     fetchAllFields: false
   };
@@ -406,33 +623,64 @@ Meteor.Collection.prototype._defineMutationMethods = function() {
   self._prefix = '/' + self._name + '/';
 
   // mutation methods
-  if (self._manager) {
+  if (self._connection) {
     var m = {};
 
     _.each(['insert', 'update', 'remove'], function (method) {
       m[self._prefix + method] = function (/* ... */) {
-        if (this.isSimulation || (!self._restricted && self._isInsecure())) {
-          self._collection[method].apply(
-            self._collection, _.toArray(arguments));
-        } else if (self._restricted) {
-          // short circuit if there is no way it will pass.
-          if (self._validators[method].allow.length === 0) {
-            throw new Meteor.Error(
-              403, "Access denied. No allow validators set on restricted " +
-                "collection.");
+        // All the methods do their own validation, instead of using check().
+        check(arguments, [Match.Any]);
+        try {
+          if (this.isSimulation) {
+
+            // In a client simulation, you can do any mutation (even with a
+            // complex selector).
+            return self._collection[method].apply(
+              self._collection, _.toArray(arguments));
           }
 
-          var validatedMethodName =
-                '_validated' + method.charAt(0).toUpperCase() + method.slice(1);
-          var argsWithUserId = [this.userId].concat(_.toArray(arguments));
-          self[validatedMethodName].apply(self, argsWithUserId);
-        } else {
-          throw new Meteor.Error(403, "Access denied");
+          // This is the server receiving a method call from the client.
+
+          // We don't allow arbitrary selectors in mutations from the client: only
+          // single-ID selectors.
+          if (method !== 'insert')
+            throwIfSelectorIsNotId(arguments[0], method);
+
+          if (self._restricted) {
+            // short circuit if there is no way it will pass.
+            if (self._validators[method].allow.length === 0) {
+              throw new Meteor.Error(
+                403, "Access denied. No allow validators set on restricted " +
+                  "collection for method '" + method + "'.");
+            }
+
+            var validatedMethodName =
+                  '_validated' + method.charAt(0).toUpperCase() + method.slice(1);
+            var argsWithUserId = [this.userId].concat(_.toArray(arguments));
+            return self[validatedMethodName].apply(self, argsWithUserId);
+          } else if (self._isInsecure()) {
+            // In insecure mode, allow any mutation (with a simple selector).
+            return self._collection[method].apply(self._collection,
+                                                  _.toArray(arguments));
+          } else {
+            // In secure mode, if we haven't called allow or deny, then nothing
+            // is permitted.
+            throw new Meteor.Error(403, "Access denied");
+          }
+        } catch (e) {
+          if (e.name === 'MongoError' || e.name === 'MinimongoError') {
+            throw new Meteor.Error(409, e.toString());
+          } else {
+            throw e;
+          }
         }
       };
     });
-
-    self._manager.methods(m);
+    // Minimongo on the server gets no stubs; instead, by default
+    // it wait()s until its result is ready, yielding.
+    // This matches the behavior of macromongo on the server better.
+    if (Meteor.isClient || self._connection === Meteor.server)
+      self._connection.methods(m);
   }
 };
 
@@ -454,8 +702,15 @@ Meteor.Collection.prototype._updateFetch = function (fields) {
 Meteor.Collection.prototype._isInsecure = function () {
   var self = this;
   if (self._insecure === undefined)
-    return Meteor.Collection.insecure;
+    return !!Package.insecure;
   return self._insecure;
+};
+
+var docToValidate = function (validator, doc) {
+  var ret = doc;
+  if (validator.transform)
+    ret = validator.transform(EJSON.clone(doc));
+  return ret;
 };
 
 Meteor.Collection.prototype._validatedInsert = function(userId, doc) {
@@ -464,18 +719,24 @@ Meteor.Collection.prototype._validatedInsert = function(userId, doc) {
   // call user validators.
   // Any deny returns true means denied.
   if (_.any(self._validators.insert.deny, function(validator) {
-    return validator(userId, doc);
+    return validator(userId, docToValidate(validator, doc));
   })) {
     throw new Meteor.Error(403, "Access denied");
   }
   // Any allow returns true means proceed. Throw error if they all fail.
   if (_.all(self._validators.insert.allow, function(validator) {
-    return !validator(userId, doc);
+    return !validator(userId, docToValidate(validator, doc));
   })) {
     throw new Meteor.Error(403, "Access denied");
   }
 
   self._collection.insert.call(self._collection, doc);
+};
+
+var transformDoc = function (validator, doc) {
+  if (validator.transform)
+    return validator.transform(doc);
+  return doc;
 };
 
 // Simulate a mongo `update` operation while validating that the access
@@ -486,12 +747,26 @@ Meteor.Collection.prototype._validatedUpdate = function(
     userId, selector, mutator, options) {
   var self = this;
 
+  options = options || {};
+
+  if (!LocalCollection._selectorIsIdPerhapsAsObject(selector))
+    throw new Error("validated update should be of a single ID");
+
+  // We don't support upserts because they don't fit nicely into allow/deny
+  // rules.
+  if (options.upsert)
+    throw new Meteor.Error(403, "Access denied. Upserts not " +
+                           "allowed in a restricted collection.");
+
   // compute modified fields
   var fields = [];
   _.each(mutator, function (params, op) {
-    if (op[0] !== '$') {
+    if (op.charAt(0) !== '$') {
       throw new Meteor.Error(
-        403, "Access denied. Can't replace document in restricted collection.");
+        403, "Access denied. In a restricted collection you can only update documents, not replace them. Use a Mongo update operator, such as '$set'.");
+    } else if (!_.has(ALLOWED_UPDATE_OPERATIONS, op)) {
+      throw new Meteor.Error(
+        403, "Access denied. Operator " + op + " not allowed in a restricted collection.");
     } else {
       _.each(_.keys(params), function (field) {
         // treat dotted fields as if they are replacing their
@@ -506,7 +781,7 @@ Meteor.Collection.prototype._validatedUpdate = function(
     }
   });
 
-  var findOptions = {};
+  var findOptions = {transform: null};
   if (!self._validators.fetchAllFields) {
     findOptions.fields = {};
     _.each(self._validators.fetch, function(fieldName) {
@@ -514,56 +789,54 @@ Meteor.Collection.prototype._validatedUpdate = function(
     });
   }
 
-  var docs;
-  if (options && options.multi) {
-    docs = self._collection.find(selector, findOptions).fetch();
-    if (docs.length === 0)  // none satisfied!
-      return;
-  } else {
-    var doc = self._collection.findOne(selector, findOptions);
-    if (!doc)  // none satisfied!
-      return;
-    docs = [doc];
-  }
+  var doc = self._collection.findOne(selector, findOptions);
+  if (!doc)  // none satisfied!
+    return 0;
+
+  var factoriedDoc;
 
   // call user validators.
   // Any deny returns true means denied.
   if (_.any(self._validators.update.deny, function(validator) {
-    return validator(userId, docs, fields, mutator);
+    if (!factoriedDoc)
+      factoriedDoc = transformDoc(validator, doc);
+    return validator(userId,
+                     factoriedDoc,
+                     fields,
+                     mutator);
   })) {
     throw new Meteor.Error(403, "Access denied");
   }
   // Any allow returns true means proceed. Throw error if they all fail.
   if (_.all(self._validators.update.allow, function(validator) {
-    return !validator(userId, docs, fields, mutator);
+    if (!factoriedDoc)
+      factoriedDoc = transformDoc(validator, doc);
+    return !validator(userId,
+                      factoriedDoc,
+                      fields,
+                      mutator);
   })) {
     throw new Meteor.Error(403, "Access denied");
   }
 
-  // Construct new $in selector to augment the original one. This means we'll
-  // never update any doc we didn't validate. We keep around the original
-  // selector so that we don't mutate any docs that have been updated to no
-  // longer match the original selector.
-  var idInClause = {};
-  idInClause.$in = _.map(docs, function(doc) {
-    return doc._id;
-  });
-  var idSelector = {_id: idInClause};
+  // Back when we supported arbitrary client-provided selectors, we actually
+  // rewrote the selector to include an _id clause before passing to Mongo to
+  // avoid races, but since selector is guaranteed to already just be an ID, we
+  // don't have to any more.
 
-  var fullSelector;
-  if (LocalCollection._selectorIsId(selector)) {
-    // If the original selector was just a lookup by _id, no need to "and" it
-    // with the idSelector (and it won't work anyway without explicitly
-    // comparing with _id).
-    if (docs.length !== 1 || docs[0]._id !== selector)
-      throw new Error("Lookup by ID " + selector + " found something else");
-    fullSelector = selector;
-  } else {
-    fullSelector = {$and: [selector, idSelector]};
-  }
+  return self._collection.update.call(
+    self._collection, selector, mutator, options);
+};
 
-  self._collection.update.call(
-    self._collection, fullSelector, mutator, options);
+// Only allow these operations in validated updates. Specifically
+// whitelist operations, rather than blacklist, so new complex
+// operations that are added aren't automatically allowed. A complex
+// operation is one that does more than just modify its target
+// field. For now this contains all update operations except '$rename'.
+// http://docs.mongodb.org/manual/reference/operators/#update
+var ALLOWED_UPDATE_OPERATIONS = {
+  $inc:1, $set:1, $unset:1, $addToSet:1, $pop:1, $pullAll:1, $pull:1,
+  $pushAll:1, $push:1, $bit:1
 };
 
 // Simulate a mongo `remove` operation while validating access control
@@ -571,7 +844,7 @@ Meteor.Collection.prototype._validatedUpdate = function(
 Meteor.Collection.prototype._validatedRemove = function(userId, selector) {
   var self = this;
 
-  var findOptions = {};
+  var findOptions = {transform: null};
   if (!self._validators.fetchAllFields) {
     findOptions.fields = {};
     _.each(self._validators.fetch, function(fieldName) {
@@ -579,30 +852,28 @@ Meteor.Collection.prototype._validatedRemove = function(userId, selector) {
     });
   }
 
-  var docs = self._collection.find(selector, findOptions).fetch();
-  if (docs.length === 0)  // none satisfied!
-    return;
+  var doc = self._collection.findOne(selector, findOptions);
+  if (!doc)
+    return 0;
 
   // call user validators.
   // Any deny returns true means denied.
   if (_.any(self._validators.remove.deny, function(validator) {
-    return validator(userId, docs);
+    return validator(userId, transformDoc(validator, doc));
   })) {
     throw new Meteor.Error(403, "Access denied");
   }
   // Any allow returns true means proceed. Throw error if they all fail.
   if (_.all(self._validators.remove.allow, function(validator) {
-    return !validator(userId, docs);
+    return !validator(userId, transformDoc(validator, doc));
   })) {
     throw new Meteor.Error(403, "Access denied");
   }
 
-  // construct new $in selector to replace the original one
-  var idInClause = {};
-  idInClause.$in = _.map(docs, function(doc) {
-    return doc._id;
-  });
-  var idSelector = {_id: idInClause};
+  // Back when we supported arbitrary client-provided selectors, we actually
+  // rewrote the selector to {_id: {$in: [ids that we found]}} before passing to
+  // Mongo to avoid races, but since selector is guaranteed to already just be
+  // an ID, we don't have to any more.
 
-  self._collection.remove.call(self._collection, idSelector);
+  return self._collection.remove.call(self._collection, selector);
 };

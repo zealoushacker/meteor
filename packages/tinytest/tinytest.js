@@ -1,5 +1,3 @@
-(function () {
-
 /******************************************************************************/
 /* TestCaseResults                                                            */
 /******************************************************************************/
@@ -12,7 +10,7 @@ TestCaseResults = function (test_case, onEvent, onException, stop_at_offset) {
   self.current_fail_count = 0;
   self.stop_at_offset = stop_at_offset;
   self.onException = onException;
-  self.id = Meteor.uuid();
+  self.id = Random.id();
 };
 
 _.extend(TestCaseResults.prototype, {
@@ -36,6 +34,12 @@ _.extend(TestCaseResults.prototype, {
 
   fail: function (doc) {
     var self = this;
+
+    if (typeof doc === "string") {
+      // Some very old code still tries to call fail() with a
+      // string. Don't do this!
+      doc = { type: "fail", message: doc };
+    }
 
     if (self.stop_at_offset === 0) {
       if (Meteor.isClient) {
@@ -61,9 +65,9 @@ _.extend(TestCaseResults.prototype, {
       Error.prepareStackTrace = savedPrepareStackTrace;
       for (var i = stack.length - 1; i >= 0; --i) {
         var frame = stack[i];
-        // Heuristic: use the OUTERMOST line which is in a _test.js or _tests.js
+        // Heuristic: use the OUTERMOST line which is in a :tests.js
         // file (this is less likely to be a test helper function).
-        if (frame.getFileName().match(/_tests?\.js/)) {
+        if (frame.getFileName().match(/:tests\.js/)) {
           doc.filename = frame.getFileName();
           doc.line = frame.getLineNumber();
           break;
@@ -103,6 +107,13 @@ _.extend(TestCaseResults.prototype, {
 
   // XXX eliminate 'message' and 'not' arguments
   equal: function (actual, expected, message, not) {
+
+    if ((! not) && (typeof actual === 'string') &&
+        (typeof expected === 'string')) {
+      this._stringEqual(actual, expected, message);
+      return;
+    }
+
     /* If expected is a DOM node, do a literal '===' comparison with
      * actual. Otherwise do a deep comparison, as implemented by _.isEqual.
      */
@@ -113,15 +124,27 @@ _.extend(TestCaseResults.prototype, {
       matched = expected === actual;
       expected = "[Node]";
       actual = "[Unknown]";
+    } else if (typeof Uint8Array !== 'undefined' && expected instanceof Uint8Array) {
+      // I have no idea why but _.isEqual on Chrome horks completely on Uint8Arrays.
+      // and the symptom is the chrome renderer taking up an entire CPU and freezing
+      // your web page, but not pausing anywhere in _.isEqual.  I don't understand it
+      // but we fall back to a manual comparison
+      if (!(actual instanceof Uint8Array))
+        this.fail({type: "assert_equal", message: "found object is not a typed array",
+                   expected: "A typed array", actual: actual.constructor.toString()});
+      if (expected.length !== actual.length)
+        this.fail({type: "assert_equal", message: "lengths of typed arrays do not match",
+                   expected: expected.length, actual: actual.length});
+      for (var i = 0; i < expected.length; i++) {
+        this.equal(actual[i], expected[i]);
+      }
     } else {
-      matched = _.isEqual(expected, actual);
-      expected = JSON.stringify(expected);
-      actual = JSON.stringify(actual);
+      matched = EJSON.equals(expected, actual);
     }
 
     if (matched === !!not) {
       this.fail({type: "assert_equal", message: message,
-                 expected: expected, actual: actual, not: !!not});
+                 expected: JSON.stringify(expected), actual: JSON.stringify(actual), not: !!not});
     } else
       this.ok();
   },
@@ -146,9 +169,30 @@ _.extend(TestCaseResults.prototype, {
   },
 
   // XXX nodejs assert.throws can take an expected error, as a class,
-  // regular expression, or predicate function..
-  throws: function (f) {
-    var actual;
+  // regular expression, or predicate function.  However, with its
+  // implementation if a constructor (class) is passed in and `actual`
+  // fails the instanceof test, the constructor is then treated as
+  // a predicate and called with `actual` (!)
+  //
+  // expected can be:
+  //  undefined: accept any exception.
+  //  regexp: accept an exception with message passing the regexp.
+  //  function: call the function as a predicate with the exception.
+  throws: function (f, expected) {
+    var actual, predicate;
+
+    if (expected === undefined)
+      predicate = function (actual) {
+        return true;
+      };
+    else if (expected instanceof RegExp)
+      predicate = function (actual) {
+        return expected.test(actual.message)
+      };
+    else if (typeof expected === 'function')
+      predicate = expected;
+    else
+      throw new Error('expected should be a predicate function or regexp');
 
     try {
       f();
@@ -156,7 +200,7 @@ _.extend(TestCaseResults.prototype, {
       actual = exception;
     }
 
-    if (actual)
+    if (actual && predicate(actual))
       this.ok({message: actual.message});
     else
       this.fail({type: "throws"});
@@ -207,21 +251,20 @@ _.extend(TestCaseResults.prototype, {
   include: function (s, v) {
     var pass = false;
     if (s instanceof Array)
-      pass = _.indexOf(s, v) !== -1;
+      pass = _.any(s, function(it) {return _.isEqual(v, it);});
     else if (typeof s === "object")
       pass = v in s;
     else if (typeof s === "string")
-      for (var i = 0; i < s.length; i++)
-        if (s.charAt(i) === v) {
-          pass = true;
-          break;
-        }
+      if (s.indexOf(v) > -1) {
+        pass = true;
+      }
     else
       /* fail -- not something that contains other things */;
     if (pass)
       this.ok();
-    else
+    else {
       this.fail({type: "include", sequence: s, should_contain_value: v});
+    }
   },
 
   // XXX should change to lengthOf to match vowsjs
@@ -231,7 +274,22 @@ _.extend(TestCaseResults.prototype, {
     else
       this.fail({type: "length", expected: expected_length,
                  actual: obj.length});
+  },
+
+  // EXPERIMENTAL way to compare two strings that results in
+  // a nicer display in the test runner, e.g. for multiline
+  // strings
+  _stringEqual: function (actual, expected, message) {
+    if (actual !== expected) {
+      this.fail({type: "string_equal",
+                 message: message,
+                 expected: expected,
+                 actual: actual});
+    } else {
+      this.ok();
+    }
   }
+
 
 });
 
@@ -271,7 +329,16 @@ _.extend(TestCase.prototype, {
       return true;
     };
 
-    var results = new TestCaseResults(self, onEvent,
+    var wrappedOnEvent = function (e) {
+      // If this trace prints, it means you ran some test.* function after the
+      // test finished! Another symptom will be that the test will display as
+      // "waiting" even when it counts as passed or failed.
+      if (completed)
+        console.trace("event after complete!");
+      return onEvent(e);
+    };
+
+    var results = new TestCaseResults(self, wrappedOnEvent,
                                       function (e) {
                                         if (markComplete())
                                           onException(e);
@@ -318,9 +385,9 @@ _.extend(TestManager.prototype, {
     self.ordered_tests.push(test);
   },
 
-  createRun: function (onReport) {
+  createRun: function (onReport, pathPrefix) {
     var self = this;
-    return new TestRun(self, onReport);
+    return new TestRun(self, onReport, pathPrefix);
   }
 });
 
@@ -331,46 +398,60 @@ TestManager = new TestManager;
 /* TestRun                                                                    */
 /******************************************************************************/
 
-TestRun = function (manager, onReport) {
+TestRun = function (manager, onReport, pathPrefix) {
   var self = this;
   self.manager = manager;
   self.onReport = onReport;
   self.next_sequence_number = 0;
-
+  self._pathPrefix = pathPrefix || [];
   _.each(self.manager.ordered_tests, function (test) {
-    self._report(test);
+    if (self._prefixMatch(test.groupPath))
+      self._report(test);
   });
 };
 
 _.extend(TestRun.prototype, {
+
+  _prefixMatch: function (testPath) {
+    var self = this;
+    for (var i = 0; i < self._pathPrefix.length; i++) {
+      if (!testPath[i] || self._pathPrefix[i] !== testPath[i]) {
+        return false;
+      }
+    }
+    return true;
+  },
+
   _runOne: function (test, onComplete, stop_at_offset) {
     var self = this;
-
     var startTime = (+new Date);
+    if (self._prefixMatch(test.groupPath)) {
+      test.run(function (event) {
+        /* onEvent */
+        self._report(test, event);
+      }, function () {
+        /* onComplete */
+        var totalTime = (+new Date) - startTime;
+        self._report(test, {type: "finish", timeMs: totalTime});
+        onComplete && onComplete();
+      }, function (exception) {
+        /* onException */
 
-    test.run(function (event) {
-      /* onEvent */
-      self._report(test, event);
-    }, function () {
-      /* onComplete */
-      var totalTime = (+new Date) - startTime;
-      self._report(test, {type: "finish", timeMs: totalTime});
+        // XXX you want the "name" and "message" fields on the
+        // exception, to start with..
+        self._report(test, {
+          type: "exception",
+          details: {
+            message: exception.message, // XXX empty???
+            stack: exception.stack // XXX portability
+          }
+        });
+
+        onComplete && onComplete();
+      }, stop_at_offset);
+    } else {
       onComplete && onComplete();
-    }, function (exception) {
-      /* onException */
-
-      // XXX you want the "name" and "message" fields on the
-      // exception, to start with..
-      self._report(test, {
-        type: "exception",
-        details: {
-          message: exception.message, // XXX empty???
-          stack: exception.stack // XXX portability
-        }
-      });
-
-      onComplete && onComplete();
-    }, stop_at_offset);
+    }
   },
 
   run: function (onComplete) {
@@ -439,32 +520,31 @@ _.extend(TestRun.prototype, {
 /* Public API                                                                 */
 /******************************************************************************/
 
-var globals = this;
-globals.Tinytest = {
-  add: function (name, func) {
-    TestManager.addCase(new TestCase(name, func));
-  },
+Tinytest = {};
 
-  addAsync: function (name, func) {
-    TestManager.addCase(new TestCase(name, func, true));
-  }
+Tinytest.add = function (name, func) {
+  TestManager.addCase(new TestCase(name, func));
+};
+
+Tinytest.addAsync = function (name, func) {
+  TestManager.addCase(new TestCase(name, func, true));
 };
 
 // Run every test, asynchronously. Runs the test in the current
 // process only (if called on the server, runs the tests on the
 // server, and likewise for the client.) Report results via
 // onReport. Call onComplete when it's done.
-Meteor._runTests = function (onReport, onComplete) {
-  var testRun = TestManager.createRun(onReport);
+//
+Tinytest._runTests = function (onReport, onComplete, pathPrefix) {
+  var testRun = TestManager.createRun(onReport, pathPrefix);
   testRun.run(onComplete);
 };
 
 // Run just one test case, and stop the debugger at a particular
 // error, all as indicated by 'cookie', which will have come from a
 // failure event output by _runTests.
-Meteor._debugTest = function (cookie, onReport, onComplete) {
+//
+Tinytest._debugTest = function (cookie, onReport, onComplete) {
   var testRun = TestManager.createRun(onReport);
   testRun.debug(cookie, onComplete);
 };
-
-})();
